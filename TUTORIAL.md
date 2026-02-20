@@ -3116,4 +3116,1343 @@ ORDER BY category ASC, price DESC;
 
 ---
 
-<!-- Parts 6–9 will be added next -->
+# Part 6: Transactions & Security
+
+> **Goal:** Understand ACID transactions, isolation levels, user management, and backup strategies.
+
+---
+
+## Topic 25 — Transactions and ACID
+
+### 🌍 Real-Life Analogy
+
+A **bank transfer**: you move $500 from Account A to Account B. If the money leaves A but a power outage stops it from reaching B, you've lost $500. A **transaction** ensures that **both steps happen, or neither does**.
+
+---
+
+### 1️⃣ WHY — Why Transactions?
+
+Transactions guarantee **ACID** properties:
+
+| Property | Meaning | Example |
+|---|---|---|
+| **Atomicity** | All or nothing | Both debit and credit execute, or both are undone |
+| **Consistency** | Data moves from one valid state to another | Total money in the system remains the same |
+| **Isolation** | Concurrent transactions don't interfere | Two transfers happening simultaneously don't corrupt each other |
+| **Durability** | Once committed, data survives crashes | Even if the server reboots, committed data is safe |
+
+---
+
+### 2️⃣ WHEN — When to Use Transactions
+
+- Any operation involving **multiple related changes** (transfers, multi-table inserts).
+- When you need a **rollback safety net** (import scripts, migrations).
+- When concurrency matters (multiple users updating the same data).
+
+---
+
+### 3️⃣ HOW — Transaction Commands
+
+#### Example 59: Basic transaction
+
+```sql
+CREATE TABLE accounts (
+    account_id INT PRIMARY KEY,
+    owner      VARCHAR(50),
+    balance    DECIMAL(12,2) CHECK (balance >= 0)
+);
+
+INSERT INTO accounts VALUES (1, 'Alice', 1000.00), (2, 'Bob', 500.00);
+
+-- Transfer $200 from Alice to Bob
+START TRANSACTION;
+
+UPDATE accounts SET balance = balance - 200 WHERE account_id = 1;
+UPDATE accounts SET balance = balance + 200 WHERE account_id = 2;
+
+-- Verify before committing
+SELECT * FROM accounts;
+-- Alice: 800, Bob: 700
+
+-- Make it permanent
+COMMIT;
+```
+
+#### Example 60: ROLLBACK on error
+
+```sql
+START TRANSACTION;
+
+UPDATE accounts SET balance = balance - 2000 WHERE account_id = 1;
+-- Alice only has 800! CHECK constraint or application logic detects this.
+
+-- Something went wrong — undo everything
+ROLLBACK;
+
+-- Alice's balance is still 800 (unchanged)
+SELECT balance FROM accounts WHERE account_id = 1;
+```
+
+#### Example 61: SAVEPOINT for partial rollback
+
+```sql
+START TRANSACTION;
+
+UPDATE accounts SET balance = balance - 100 WHERE account_id = 1;
+SAVEPOINT after_debit;
+
+UPDATE accounts SET balance = balance + 100 WHERE account_id = 2;
+-- Oops, wrong recipient! Roll back only to the savepoint
+ROLLBACK TO SAVEPOINT after_debit;
+
+-- Now credit the correct account
+UPDATE accounts SET balance = balance + 100 WHERE account_id = 3;
+
+COMMIT;
+```
+
+| Command | What It Does |
+|---|---|
+| `START TRANSACTION` | Begins a new transaction |
+| `COMMIT` | Saves all changes permanently |
+| `ROLLBACK` | Undoes all changes since START TRANSACTION |
+| `SAVEPOINT name` | Creates a named checkpoint |
+| `ROLLBACK TO SAVEPOINT name` | Undoes changes back to that checkpoint (not the whole transaction) |
+
+---
+
+### ✏️ Practice Exercise 25
+
+> **Difficulty:** ⭐⭐ Intermediate
+>
+> 1. Create an `accounts` table and insert 3 accounts.
+> 2. Write a transaction that transfers money between two accounts. Verify balances before and after COMMIT.
+> 3. Write a transaction that intentionally causes an error, and use ROLLBACK to undo the changes.
+> 4. Use SAVEPOINT to partially rollback a multi-step transaction.
+
+---
+
+## Topic 26 — Isolation Levels
+
+### 🌍 Real-Life Analogy
+
+Imagine reading a shared document while someone else is editing it. Should you see their **unsaved changes**? Their **saved but uncommitted** changes? Only **final committed** changes? Isolation levels control how much of other transactions' work you can see.
+
+---
+
+### 1️⃣ WHY — Why Isolation Levels?
+
+Different applications need different trade-offs between **data accuracy** and **performance**:
+- Stricter isolation = more accurate but slower (more locking).
+- Looser isolation = faster but may see incomplete data.
+
+---
+
+### 2️⃣ WHEN — Choosing an Isolation Level
+
+| Level | Dirty Reads | Non-Repeatable Reads | Phantom Reads | Use When |
+|---|---|---|---|---|
+| **READ UNCOMMITTED** | ✅ Possible | ✅ Possible | ✅ Possible | Rough monitoring, never for production |
+| **READ COMMITTED** | ❌ No | ✅ Possible | ✅ Possible | Most web apps, PostgreSQL default |
+| **REPEATABLE READ** | ❌ No | ❌ No | ✅ Possible* | MySQL default, good balance |
+| **SERIALIZABLE** | ❌ No | ❌ No | ❌ No | Financial systems, maximum safety |
+
+> *MySQL's InnoDB uses gap locking to also prevent phantom reads at REPEATABLE READ.
+
+---
+
+### 3️⃣ HOW — Setting Isolation Levels
+
+#### Example 62: Checking and setting isolation level
+
+```sql
+-- Check current isolation level
+SELECT @@transaction_isolation;
+-- Default: REPEATABLE-READ
+
+-- Set for current session
+SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+-- Set for next transaction only
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+-- Set globally (requires privileges)
+SET GLOBAL TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+```
+
+#### Example 63: Dirty read demonstration
+
+```sql
+-- Session 1: Start transaction but don't commit
+SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+START TRANSACTION;
+UPDATE accounts SET balance = 9999 WHERE account_id = 1;
+-- Don't commit yet!
+
+-- Session 2 (with READ UNCOMMITTED): Can see uncommitted data!
+SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT balance FROM accounts WHERE account_id = 1;
+-- Shows 9999 (dirty read!) — this value may be rolled back!
+
+-- Session 1: ROLLBACK
+ROLLBACK;
+-- Session 2 just read data that never actually existed.
+```
+
+---
+
+### ✏️ Practice Exercise 26
+
+> **Difficulty:** ⭐⭐⭐ Advanced
+>
+> 1. Check your MySQL's default isolation level.
+> 2. Explain the difference between a dirty read and a phantom read.
+> 3. When would you choose SERIALIZABLE over REPEATABLE READ?
+> 4. In your own words, explain why READ UNCOMMITTED is dangerous for production systems.
+
+---
+
+## Topic 27 — Users and Privileges
+
+### 🌍 Real-Life Analogy
+
+A building has different access levels: visitors can enter the lobby, employees can access offices, only the manager has keys to the vault. MySQL privileges work the same way — different users get different levels of access.
+
+---
+
+### 1️⃣ WHY — Why Manage Users?
+
+- **Security** — Don't run everything as root! Limit access to reduce damage from compromises.
+- **Accountability** — Track who did what.
+- **Principle of least privilege** — Users should only have the permissions they need.
+
+---
+
+### 2️⃣ WHEN — When to Create Users
+
+| Scenario | Permissions |
+|---|---|
+| Application backend | SELECT, INSERT, UPDATE, DELETE on specific databases |
+| Read-only dashboard | SELECT only |
+| DBA / Admin | ALL PRIVILEGES (sparingly) |
+| Backup script | SELECT, LOCK TABLES, SHOW VIEW |
+
+---
+
+### 3️⃣ HOW — User Management
+
+#### Example 64: Creating and managing users
+
+```sql
+-- Create a user
+CREATE USER 'app_user'@'localhost' IDENTIFIED BY 'Str0ngP@ss!';
+
+-- Create a user that can connect from anywhere
+CREATE USER 'remote_user'@'%' IDENTIFIED BY 'An0therP@ss!';
+
+-- Grant specific permissions
+GRANT SELECT, INSERT, UPDATE ON shop.* TO 'app_user'@'localhost';
+
+-- Grant all permissions on a database
+GRANT ALL PRIVILEGES ON shop.* TO 'app_user'@'localhost';
+
+-- Grant read-only access
+GRANT SELECT ON shop.* TO 'readonly_user'@'localhost';
+
+-- Apply privilege changes
+FLUSH PRIVILEGES;
+
+-- Show grants for a user
+SHOW GRANTS FOR 'app_user'@'localhost';
+
+-- Revoke permissions
+REVOKE INSERT, UPDATE ON shop.* FROM 'app_user'@'localhost';
+
+-- Change a user's password
+ALTER USER 'app_user'@'localhost' IDENTIFIED BY 'NewStr0ngP@ss!';
+
+-- Delete a user
+DROP USER 'remote_user'@'%';
+```
+
+**Line-by-line explanation:**
+
+| Line | What It Does |
+|---|---|
+| `CREATE USER 'app_user'@'localhost'` | Creates user who can only connect from the same machine |
+| `IDENTIFIED BY 'Str0ngP@ss!'` | Sets the password |
+| `'remote_user'@'%'` | `%` means the user can connect from any host |
+| `GRANT SELECT, INSERT, UPDATE ON shop.*` | Allows read, insert, and update on all tables in `shop` |
+| `FLUSH PRIVILEGES` | Reloads privilege tables (not always needed, but ensures changes take effect) |
+| `REVOKE INSERT, UPDATE ...` | Removes specific permissions |
+
+---
+
+### ✏️ Practice Exercise 27
+
+> **Difficulty:** ⭐⭐ Intermediate
+>
+> 1. Create a user `report_user` that can only SELECT from the `store` database.
+> 2. Create a user `admin_user` with ALL PRIVILEGES on all databases.
+> 3. Show grants for both users.
+> 4. Revoke all privileges from `admin_user` and then drop the user.
+
+---
+
+## Topic 28 — Backup and Restore
+
+### 🌍 Real-Life Analogy
+
+Backup is like making a **photocopy** of important documents. If the originals are lost in a fire, you have copies. No backup = no recovery.
+
+---
+
+### 1️⃣ WHY — Why Backup?
+
+- **Hardware failure** — Disks die. Servers crash.
+- **Human error** — Someone runs `DROP TABLE` by accident.
+- **Security incidents** — Ransomware, data corruption.
+- **Compliance** — Many regulations require data retention.
+
+---
+
+### 2️⃣ WHEN — Backup Strategies
+
+| Strategy | Frequency | Tool | Use Case |
+|---|---|---|---|
+| **Full backup** | Daily or weekly | `mysqldump` | Small to medium databases |
+| **Incremental** | Hourly | Binary logs | Large databases, point-in-time recovery |
+| **Physical backup** | Daily | `mysqlbackup` or file copy | Very large databases |
+
+---
+
+### 3️⃣ HOW — Backup and Restore Commands
+
+#### Example 65: mysqldump backup
+
+```bash
+# Backup a single database
+mysqldump -u root -p shop > shop_backup.sql
+
+# Backup specific tables
+mysqldump -u root -p shop products customers > shop_tables_backup.sql
+
+# Backup all databases
+mysqldump -u root -p --all-databases > all_databases_backup.sql
+
+# Backup with structure only (no data)
+mysqldump -u root -p --no-data shop > shop_structure.sql
+
+# Backup with data only (no structure)
+mysqldump -u root -p --no-create-info shop > shop_data.sql
+```
+
+#### Example 66: Restoring from backup
+
+```bash
+# Restore a database
+mysql -u root -p shop < shop_backup.sql
+
+# Restore into a new database
+mysql -u root -p -e "CREATE DATABASE shop_restored;"
+mysql -u root -p shop_restored < shop_backup.sql
+
+# Restore all databases
+mysql -u root -p < all_databases_backup.sql
+```
+
+#### Example 67: Automated backup script
+
+```bash
+#!/bin/bash
+# Simple daily backup script
+DATE=$(date +%Y-%m-%d)
+BACKUP_DIR="/var/backups/mysql"
+DB_NAME="shop"
+
+mkdir -p "$BACKUP_DIR"
+
+mysqldump -u root -p"YourPassword" "$DB_NAME" | gzip > "$BACKUP_DIR/${DB_NAME}_${DATE}.sql.gz"
+
+# Keep only last 30 days
+find "$BACKUP_DIR" -name "*.sql.gz" -mtime +30 -delete
+
+echo "Backup completed: ${DB_NAME}_${DATE}.sql.gz"
+```
+
+---
+
+### ✏️ Practice Exercise 28
+
+> **Difficulty:** ⭐⭐ Intermediate
+>
+> 1. Back up your `store` database using `mysqldump`.
+> 2. Drop the database, then restore it from the backup.
+> 3. Create a structure-only backup and a data-only backup. When might each be useful?
+> 4. Write a simple backup script that compresses the output with gzip.
+
+---
+
+## 🏁 Part 6 Summary
+
+| Topic | Key Takeaway |
+|---|---|
+| **Transactions** | START TRANSACTION → COMMIT/ROLLBACK. ACID ensures reliability. |
+| **Isolation Levels** | Trade-off between accuracy and performance. REPEATABLE READ is MySQL's default. |
+| **Users & Privileges** | Principle of least privilege. Never use root in applications. |
+| **Backup & Restore** | `mysqldump` for logical backups. Automate and test restores regularly. |
+
+> **Next up:** [Part 7: Performance Optimization](#part-7-performance-optimization) — Indexes, EXPLAIN, query tuning, and partitioning.
+
+---
+
+# Part 7: Performance Optimization
+
+> **Goal:** Make your queries and database fast. Learn indexes, query plans, optimization techniques, and partitioning.
+
+---
+
+## Topic 29 — Indexes
+
+### 🌍 Real-Life Analogy
+
+Think of a **book index** at the back. Without it, finding "transactions" means reading every page. With an index, you look up "transactions → page 247" and go directly there. Database indexes work the same way — they create shortcuts to data, making searches much faster.
+
+---
+
+### 1️⃣ WHY — Why Indexes?
+
+| Without Index | With Index |
+|---|---|
+| Full table scan (every row checked) | Direct lookup via B-Tree |
+| Slow on large tables (millions of rows) | Near-instant even with billions |
+| O(n) complexity | O(log n) complexity |
+
+---
+
+### 2️⃣ WHEN — When to Create Indexes
+
+✅ **Index these:**
+- Columns used in WHERE clauses frequently
+- Columns used in JOIN conditions
+- Columns used in ORDER BY / GROUP BY
+- Foreign key columns
+
+❌ **Don't over-index:**
+- Columns rarely used in queries
+- Tables with very few rows
+- Columns with very low cardinality (e.g., boolean)
+- Tables with heavy INSERT/UPDATE (indexes slow writes)
+
+---
+
+### 3️⃣ HOW — Index Types and Usage
+
+#### Example 68: Creating indexes
+
+```sql
+USE store;
+
+-- Single-column index
+CREATE INDEX idx_product_name ON products(product_name);
+
+-- Composite index (multi-column)
+CREATE INDEX idx_cat_price ON products(category, price);
+
+-- Unique index
+CREATE UNIQUE INDEX idx_unique_email ON customers(email);
+
+-- Show indexes on a table
+SHOW INDEX FROM products;
+
+-- Drop an index
+DROP INDEX idx_product_name ON products;
+```
+
+#### Example 69: Index types
+
+```sql
+-- B-Tree index (default) — best for =, <, >, BETWEEN, LIKE 'prefix%'
+CREATE INDEX idx_btree ON products(price);
+
+-- FULLTEXT index — for text search
+ALTER TABLE products ADD FULLTEXT INDEX idx_fulltext (product_name);
+SELECT * FROM products WHERE MATCH(product_name) AGAINST('laptop');
+
+-- Prefix index — for long VARCHAR columns
+CREATE INDEX idx_prefix ON customers(email(20));
+-- Only indexes the first 20 characters
+```
+
+#### Example 70: Composite index ordering matters
+
+```sql
+-- This composite index helps queries that filter by category, then price
+CREATE INDEX idx_cat_price ON products(category, price);
+
+-- ✅ Uses the index (leftmost columns match)
+SELECT * FROM products WHERE category = 'Electronics';
+SELECT * FROM products WHERE category = 'Electronics' AND price > 100;
+
+-- ❌ Cannot use this index efficiently
+SELECT * FROM products WHERE price > 100;
+-- (price is the second column — the index requires category first)
+```
+
+> **Rule of thumb:** A composite index `(A, B, C)` supports queries filtering on `A`, `A+B`, or `A+B+C`, but NOT just `B` or `C` alone.
+
+---
+
+### ✏️ Practice Exercise 29
+
+> **Difficulty:** ⭐⭐⭐ Advanced
+>
+> 1. Create an index on the `products.category` column. Run a SELECT with `WHERE category = 'Electronics'` before and after creating the index — use `EXPLAIN` to see the difference.
+> 2. Create a composite index on `(category, price)`. Test which queries can use it.
+> 3. What happens to INSERT performance when you add many indexes? Why?
+> 4. When would you use a FULLTEXT index instead of a B-Tree index?
+
+---
+
+## Topic 30 — EXPLAIN and Query Plans
+
+### 🌍 Real-Life Analogy
+
+`EXPLAIN` is like asking a GPS to show you its planned route before you start driving. It shows you **how MySQL plans to execute your query** — which indexes it will use, how many rows it will scan, and where bottlenecks might be.
+
+---
+
+### 1️⃣ WHY — Why Use EXPLAIN?
+
+- Identify **slow queries** before they become production problems.
+- Verify that indexes are being used.
+- Understand the cost of complex JOINs and subqueries.
+
+---
+
+### 2️⃣ WHEN — When to Use EXPLAIN
+
+- Before deploying any query that runs on large tables.
+- When a query is slower than expected.
+- When adding or evaluating indexes.
+- During code review of database queries.
+
+---
+
+### 3️⃣ HOW — Reading EXPLAIN Output
+
+#### Example 71: Basic EXPLAIN
+
+```sql
+EXPLAIN SELECT * FROM products WHERE category = 'Electronics';
+```
+
+**Key columns in EXPLAIN output:**
+
+| Column | What It Tells You |
+|---|---|
+| `type` | How MySQL accesses the table: `ALL` (full scan — bad), `ref` (index lookup — good), `const` (single row — best) |
+| `possible_keys` | Indexes MySQL could use |
+| `key` | Index MySQL actually chose |
+| `rows` | Estimated number of rows to scan |
+| `Extra` | Additional info: `Using where`, `Using index`, `Using filesort` |
+
+#### Example 72: EXPLAIN comparison with and without index
+
+```sql
+-- Without index (full table scan)
+DROP INDEX idx_cat_price ON products;
+EXPLAIN SELECT * FROM products WHERE category = 'Electronics' AND price > 100;
+-- type: ALL, rows: 10 (scans entire table)
+
+-- With index
+CREATE INDEX idx_cat_price ON products(category, price);
+EXPLAIN SELECT * FROM products WHERE category = 'Electronics' AND price > 100;
+-- type: range, key: idx_cat_price, rows: 3 (much fewer rows scanned)
+```
+
+#### Example 73: EXPLAIN FORMAT=JSON for detailed analysis
+
+```sql
+EXPLAIN FORMAT=JSON
+SELECT p.product_name, c.category_name
+FROM products p
+JOIN categories c ON p.category_id = c.category_id
+WHERE p.price > 100;
+```
+
+#### Common EXPLAIN type values (best to worst):
+
+| type | Meaning | Speed |
+|---|---|---|
+| `system` | Single-row table | ⚡ Fastest |
+| `const` | One matching row (PK/UNIQUE lookup) | ⚡ |
+| `eq_ref` | One row per join (PK/UNIQUE) | ⚡ |
+| `ref` | Multiple matching rows via index | ✅ Good |
+| `range` | Index range scan (BETWEEN, <, >) | ✅ Good |
+| `index` | Full index scan | ⚠️ OK |
+| `ALL` | Full table scan | 🐌 Slow |
+
+---
+
+### ✏️ Practice Exercise 30 (bonus — see note below)
+
+> **Difficulty:** ⭐⭐⭐ Advanced
+>
+> 1. Run `EXPLAIN` on a SELECT with no index and note the `type` and `rows`.
+> 2. Create an index, re-run `EXPLAIN`, and compare.
+> 3. Write a query with a JOIN and analyze its EXPLAIN output.
+> 4. What does `Using filesort` in the Extra column mean? How can you avoid it?
+
+---
+
+## Topic 31 — Query Optimization Tips
+
+### 1️⃣ WHY — Why Optimize?
+
+A poorly written query on a large table can take minutes. An optimized one takes milliseconds. Optimization saves server resources, reduces costs, and improves user experience.
+
+---
+
+### 2️⃣ WHEN — Signs You Need Optimization
+
+- Queries take more than a second.
+- `EXPLAIN` shows `type: ALL` (full table scan).
+- High CPU or disk usage on the database server.
+- Application timeouts from slow database calls.
+
+---
+
+### 3️⃣ HOW — Optimization Techniques
+
+#### Example 74: Common optimizations
+
+```sql
+-- ❌ BAD: SELECT * (fetches unnecessary columns)
+SELECT * FROM products;
+
+-- ✅ GOOD: Select only what you need
+SELECT product_name, price FROM products;
+
+-- ❌ BAD: Function on indexed column (prevents index use)
+SELECT * FROM products WHERE YEAR(created_at) = 2024;
+
+-- ✅ GOOD: Use range comparison (can use index)
+SELECT * FROM products WHERE created_at >= '2024-01-01' AND created_at < '2025-01-01';
+
+-- ❌ BAD: LIKE with leading wildcard (full scan)
+SELECT * FROM products WHERE product_name LIKE '%phone%';
+
+-- ✅ GOOD: LIKE with trailing wildcard (can use index)
+SELECT * FROM products WHERE product_name LIKE 'phone%';
+
+-- ❌ BAD: OR on different columns (hard to index)
+SELECT * FROM products WHERE category = 'Electronics' OR price > 500;
+
+-- ✅ GOOD: Use UNION for OR on different indexed columns
+SELECT * FROM products WHERE category = 'Electronics'
+UNION
+SELECT * FROM products WHERE price > 500;
+```
+
+#### Example 75: Pagination optimization
+
+```sql
+-- ❌ SLOW for large offsets
+SELECT * FROM products ORDER BY product_id LIMIT 10 OFFSET 100000;
+-- MySQL must read and discard 100,000 rows!
+
+-- ✅ FAST: Keyset pagination (seek method)
+SELECT * FROM products
+WHERE product_id > 100000
+ORDER BY product_id
+LIMIT 10;
+-- Jumps directly to the right position using the index
+```
+
+---
+
+## Topic 32 — Partitioning
+
+### 🌍 Real-Life Analogy
+
+Partitioning is like dividing a huge filing cabinet into labeled drawers (by year, by region). When you need "2024 records," you only open one drawer instead of searching the entire cabinet.
+
+---
+
+### 1️⃣ WHY — Why Partition?
+
+- **Query performance** — Only scan relevant partitions (partition pruning).
+- **Maintenance** — Drop old data by dropping a partition (instant vs. slow DELETE).
+- **Manageability** — Backup/restore individual partitions.
+
+---
+
+### 2️⃣ WHEN — When to Partition
+
+- Tables with millions/billions of rows.
+- Queries frequently filter by the partition column (date, region, status).
+- You need to regularly purge old data.
+
+---
+
+### 3️⃣ HOW — Partitioning Types
+
+#### Example 76: RANGE partitioning (by date)
+
+```sql
+CREATE TABLE sales (
+    sale_id   INT AUTO_INCREMENT,
+    sale_date DATE NOT NULL,
+    amount    DECIMAL(10,2),
+    PRIMARY KEY (sale_id, sale_date)
+) PARTITION BY RANGE (YEAR(sale_date)) (
+    PARTITION p2022 VALUES LESS THAN (2023),
+    PARTITION p2023 VALUES LESS THAN (2024),
+    PARTITION p2024 VALUES LESS THAN (2025),
+    PARTITION p_future VALUES LESS THAN MAXVALUE
+);
+
+-- Insert data (automatically goes to the right partition)
+INSERT INTO sales (sale_date, amount) VALUES ('2023-06-15', 99.99);
+INSERT INTO sales (sale_date, amount) VALUES ('2024-01-20', 149.99);
+
+-- Query only scans the relevant partition
+SELECT * FROM sales WHERE sale_date BETWEEN '2024-01-01' AND '2024-12-31';
+-- MySQL only reads partition p2024 (partition pruning)
+
+-- Drop old data instantly
+ALTER TABLE sales DROP PARTITION p2022;
+```
+
+#### Example 77: LIST partitioning (by category)
+
+```sql
+CREATE TABLE orders_partitioned (
+    order_id INT AUTO_INCREMENT,
+    region   VARCHAR(20) NOT NULL,
+    amount   DECIMAL(10,2),
+    PRIMARY KEY (order_id, region)
+) PARTITION BY LIST COLUMNS (region) (
+    PARTITION p_americas VALUES IN ('US', 'Canada', 'Brazil'),
+    PARTITION p_europe  VALUES IN ('UK', 'France', 'Germany'),
+    PARTITION p_asia    VALUES IN ('Japan', 'India', 'China')
+);
+```
+
+#### Example 78: HASH partitioning (even distribution)
+
+```sql
+CREATE TABLE sessions (
+    session_id INT AUTO_INCREMENT,
+    user_id    INT NOT NULL,
+    data       TEXT,
+    PRIMARY KEY (session_id, user_id)
+) PARTITION BY HASH (user_id) PARTITIONS 4;
+-- Distributes rows evenly across 4 partitions based on user_id
+```
+
+---
+
+## 🏁 Part 7 Summary
+
+| Topic | Key Takeaway |
+|---|---|
+| **Indexes** | B-Tree shortcuts for fast lookups. Index WHERE, JOIN, ORDER BY columns. Don't over-index. |
+| **EXPLAIN** | Shows query execution plan. Look for `type`, `key`, and `rows`. Avoid `ALL`. |
+| **Query Optimization** | Select only needed columns, avoid functions on indexed columns, use keyset pagination. |
+| **Partitioning** | Split huge tables by range/list/hash. Enables partition pruning and fast data purging. |
+
+> **Next up:** [Part 8: Advanced Features](#part-8-advanced-features) — Stored procedures, triggers, views, JSON, and replication.
+
+---
+
+# Part 8: Advanced Features
+
+> **Goal:** Learn stored procedures, triggers, views, JSON handling, and replication basics.
+
+---
+
+## Topic 33 — Stored Procedures and Functions
+
+### 🌍 Real-Life Analogy
+
+A stored procedure is like a **recipe card** in a kitchen. Instead of giving instructions from scratch every time, the chef (database) reads the card and executes the steps. You call the recipe by name, optionally pass in ingredients (parameters), and get a dish (result).
+
+---
+
+### 1️⃣ WHY — Why Stored Procedures?
+
+| Benefit | Explanation |
+|---|---|
+| **Reusability** | Write once, call many times |
+| **Security** | Grant EXECUTE permission without exposing table details |
+| **Performance** | Pre-parsed and cached; reduces network round-trips |
+| **Encapsulation** | Complex logic lives in the database, not scattered in app code |
+
+---
+
+### 2️⃣ WHEN — When to Use
+
+- Complex multi-step database operations.
+- Business logic that must be enforced at the database level.
+- Batch processing and scheduled tasks.
+- When multiple applications share the same database.
+
+---
+
+### 3️⃣ HOW — Creating and Using Procedures
+
+#### Example 79: Basic stored procedure
+
+```sql
+DELIMITER //
+
+CREATE PROCEDURE GetAllProducts()
+BEGIN
+    SELECT product_name, price, category
+    FROM products
+    ORDER BY price DESC;
+END //
+
+DELIMITER ;
+
+-- Call the procedure
+CALL GetAllProducts();
+```
+
+**Line-by-line explanation:**
+
+| Line | What It Does |
+|---|---|
+| `DELIMITER //` | Changes the statement delimiter from `;` to `//` so the procedure body can contain semicolons. |
+| `CREATE PROCEDURE GetAllProducts()` | Defines a procedure named `GetAllProducts` with no parameters. |
+| `BEGIN ... END` | Wraps the procedure body. |
+| `DELIMITER ;` | Restores the normal delimiter. |
+| `CALL GetAllProducts()` | Executes the procedure. |
+
+#### Example 80: Procedure with IN, OUT, and INOUT parameters
+
+```sql
+DELIMITER //
+
+CREATE PROCEDURE GetProductsByCategory(
+    IN  p_category VARCHAR(50),        -- input parameter
+    OUT p_count    INT                  -- output parameter
+)
+BEGIN
+    SELECT * FROM products WHERE category = p_category;
+    SELECT COUNT(*) INTO p_count FROM products WHERE category = p_category;
+END //
+
+DELIMITER ;
+
+-- Call with parameters
+CALL GetProductsByCategory('Electronics', @count);
+SELECT @count AS electronics_count;
+```
+
+#### Example 81: Procedure with control flow
+
+```sql
+DELIMITER //
+
+CREATE PROCEDURE ApplyDiscount(
+    IN p_product_id INT,
+    IN p_discount_pct DECIMAL(5,2)
+)
+BEGIN
+    DECLARE v_current_price DECIMAL(10,2);
+    DECLARE v_new_price DECIMAL(10,2);
+
+    -- Get current price
+    SELECT price INTO v_current_price
+    FROM products WHERE product_id = p_product_id;
+
+    -- Validate
+    IF v_current_price IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Product not found';
+    ELSEIF p_discount_pct < 0 OR p_discount_pct > 100 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Discount must be between 0 and 100';
+    ELSE
+        SET v_new_price = v_current_price * (1 - p_discount_pct / 100);
+        UPDATE products SET price = v_new_price WHERE product_id = p_product_id;
+        SELECT CONCAT('Price updated: ', v_current_price, ' -> ', v_new_price) AS result;
+    END IF;
+END //
+
+DELIMITER ;
+
+-- Apply 15% discount to product 1
+CALL ApplyDiscount(1, 15.00);
+```
+
+#### Example 82: Stored function (returns a value)
+
+```sql
+DELIMITER //
+
+CREATE FUNCTION CalculateTax(p_amount DECIMAL(10,2))
+RETURNS DECIMAL(10,2)
+DETERMINISTIC
+BEGIN
+    RETURN p_amount * 0.08;  -- 8% tax
+END //
+
+DELIMITER ;
+
+-- Use in a query
+SELECT product_name, price, CalculateTax(price) AS tax,
+       price + CalculateTax(price) AS total_with_tax
+FROM products;
+```
+
+---
+
+### ✏️ Practice Exercise 31 (bonus)
+
+> **Difficulty:** ⭐⭐⭐ Advanced
+>
+> 1. Create a stored procedure that accepts a minimum price and returns all products above that price.
+> 2. Create a stored function `FullName(first, last)` that returns a concatenated full name.
+> 3. Create a procedure that transfers money between accounts (from Topic 25) with error handling.
+
+---
+
+## Topic 34 — Triggers
+
+### 🌍 Real-Life Analogy
+
+A trigger is like a **motion-sensor light**: when someone walks through the door (event happens), the light turns on automatically (action fires). Database triggers fire automatically when an INSERT, UPDATE, or DELETE happens.
+
+---
+
+### 1️⃣ WHY — Why Triggers?
+
+- **Audit logging** — Automatically record who changed what and when.
+- **Data validation** — Enforce complex rules beyond CHECK constraints.
+- **Cascading updates** — Automatically update related data.
+- **Consistency** — Logic runs regardless of which application touches the data.
+
+---
+
+### 2️⃣ WHEN — When to Use Triggers
+
+| Timing | Event | Use Case |
+|---|---|---|
+| `BEFORE INSERT` | Before a row is added | Validate or modify data |
+| `AFTER INSERT` | After a row is added | Log the change, update counters |
+| `BEFORE UPDATE` | Before a row changes | Capture old values, validate |
+| `AFTER UPDATE` | After a row changes | Audit log, sync related tables |
+| `BEFORE DELETE` | Before a row is removed | Prevent deletion, archive |
+| `AFTER DELETE` | After a row is removed | Update counters, cascade cleanup |
+
+---
+
+### 3️⃣ HOW — Creating Triggers
+
+#### Example 83: Audit log trigger
+
+```sql
+-- Audit log table
+CREATE TABLE product_audit (
+    audit_id   INT AUTO_INCREMENT PRIMARY KEY,
+    product_id INT,
+    action     VARCHAR(10),
+    old_price  DECIMAL(10,2),
+    new_price  DECIMAL(10,2),
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    changed_by VARCHAR(100)
+);
+
+-- Trigger: log price changes
+DELIMITER //
+CREATE TRIGGER trg_product_price_update
+AFTER UPDATE ON products
+FOR EACH ROW
+BEGIN
+    IF OLD.price <> NEW.price THEN
+        INSERT INTO product_audit (product_id, action, old_price, new_price, changed_by)
+        VALUES (NEW.product_id, 'UPDATE', OLD.price, NEW.price, CURRENT_USER());
+    END IF;
+END //
+DELIMITER ;
+
+-- Test: update a product price
+UPDATE products SET price = 899.99 WHERE product_id = 1;
+
+-- Check the audit log
+SELECT * FROM product_audit;
+```
+
+#### Example 84: Before insert trigger (validation)
+
+```sql
+DELIMITER //
+CREATE TRIGGER trg_validate_stock
+BEFORE INSERT ON products
+FOR EACH ROW
+BEGIN
+    IF NEW.stock < 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Stock cannot be negative';
+    END IF;
+    IF NEW.price < 0 THEN
+        SET NEW.price = 0;  -- auto-correct negative prices to 0
+    END IF;
+END //
+DELIMITER ;
+```
+
+#### Example 85: After delete trigger
+
+```sql
+-- Log deleted products
+CREATE TABLE deleted_products_log (
+    log_id      INT AUTO_INCREMENT PRIMARY KEY,
+    product_id  INT,
+    product_name VARCHAR(100),
+    deleted_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+DELIMITER //
+CREATE TRIGGER trg_log_deleted_product
+AFTER DELETE ON products
+FOR EACH ROW
+BEGIN
+    INSERT INTO deleted_products_log (product_id, product_name)
+    VALUES (OLD.product_id, OLD.product_name);
+END //
+DELIMITER ;
+```
+
+---
+
+### ✏️ Practice Exercise 32 (bonus)
+
+> **Difficulty:** ⭐⭐⭐ Advanced
+>
+> 1. Create an audit trigger on the `customers` table that logs all UPDATE operations.
+> 2. Create a BEFORE INSERT trigger that sets a default value for a column if NULL is provided.
+> 3. List all triggers in your database using `SHOW TRIGGERS;`.
+
+---
+
+## Topic 35 — Views
+
+### 🌍 Real-Life Analogy
+
+A view is like a **saved search** or a **window** into your data. It doesn't copy data — it's a named query that you can treat like a table. Change the underlying data, and the view reflects it immediately.
+
+---
+
+### 1️⃣ WHY — Why Views?
+
+| Benefit | Explanation |
+|---|---|
+| **Simplification** | Hide complex JOINs behind a simple name |
+| **Security** | Expose only certain columns/rows to certain users |
+| **Consistency** | Everyone uses the same query definition |
+| **Abstraction** | Change underlying tables without changing application queries |
+
+---
+
+### 2️⃣ WHEN — When to Create Views
+
+- Complex reports that are run frequently.
+- Providing read-only access to sensitive tables.
+- Simplifying queries for application developers.
+- Creating a stable API over a changing schema.
+
+---
+
+### 3️⃣ HOW — Creating and Using Views
+
+#### Example 86: Basic view
+
+```sql
+-- View: expensive products (price > 200)
+CREATE VIEW expensive_products AS
+SELECT product_name, category, price, stock
+FROM products
+WHERE price > 200
+ORDER BY price DESC;
+
+-- Use it like a table
+SELECT * FROM expensive_products;
+
+-- Filter the view further
+SELECT * FROM expensive_products WHERE category = 'Electronics';
+```
+
+#### Example 87: View with JOINs
+
+```sql
+-- View: order summary (joins multiple tables)
+CREATE VIEW order_summary AS
+SELECT
+    o.order_id,
+    c.name AS customer_name,
+    o.order_date,
+    SUM(oi.quantity * oi.unit_price) AS total_amount
+FROM orders o
+JOIN customers c ON o.customer_id = c.customer_id
+JOIN order_items oi ON o.order_id = oi.order_id
+GROUP BY o.order_id, c.name, o.order_date;
+
+-- Simple queries against the complex view
+SELECT * FROM order_summary WHERE total_amount > 500;
+```
+
+#### Example 88: Updatable view and WITH CHECK OPTION
+
+```sql
+-- Updatable view (simple enough for INSERT/UPDATE)
+CREATE VIEW active_customers AS
+SELECT customer_id, name, email, city
+FROM customers
+WHERE city IS NOT NULL
+WITH CHECK OPTION;
+
+-- This works (city is not null)
+UPDATE active_customers SET city = 'Denver' WHERE customer_id = 1;
+
+-- This fails (would violate the view's WHERE condition)
+UPDATE active_customers SET city = NULL WHERE customer_id = 1;
+-- ERROR: CHECK OPTION failed
+
+-- Drop a view
+DROP VIEW IF EXISTS expensive_products;
+```
+
+---
+
+### ✏️ Practice Exercise 33 (bonus)
+
+> **Difficulty:** ⭐⭐ Intermediate
+>
+> 1. Create a view called `product_summary` that shows product name, category, price, and stock for products in stock (stock > 0).
+> 2. Create a view with a JOIN between `employees` and `departments`.
+> 3. Try updating data through a simple view. Does it work?
+
+---
+
+## Topic 36 — JSON in MySQL
+
+### 🌍 Real-Life Analogy
+
+JSON is like a **flexible notebook** inside your structured filing cabinet. Most data fits neatly into columns, but sometimes you need to store semi-structured data (user preferences, API responses, configuration) — JSON gives you that flexibility within a relational database.
+
+---
+
+### 1️⃣ WHY — Why JSON in MySQL?
+
+- Store **semi-structured data** without creating extra columns for every attribute.
+- Work with API data that arrives as JSON.
+- Combine relational structure with document-style flexibility.
+
+---
+
+### 2️⃣ WHEN — When to Use JSON
+
+✅ **Good uses:** User settings, metadata, API responses, optional attributes that vary per row.
+
+❌ **Avoid when:** Data has a consistent structure — use regular columns for better performance.
+
+---
+
+### 3️⃣ HOW — JSON Operations
+
+#### Example 89: Storing and querying JSON
+
+```sql
+CREATE TABLE user_settings (
+    user_id  INT PRIMARY KEY,
+    name     VARCHAR(100) NOT NULL,
+    settings JSON
+);
+
+INSERT INTO user_settings VALUES
+(1, 'Alice', '{"theme": "dark", "language": "en", "notifications": {"email": true, "sms": false}}'),
+(2, 'Bob',   '{"theme": "light", "language": "fr", "notifications": {"email": false, "sms": true}}');
+
+-- Extract a JSON value with ->> (returns text)
+SELECT name, settings->>'$.theme' AS theme
+FROM user_settings;
+
+-- Extract nested value
+SELECT name, settings->>'$.notifications.email' AS email_notifications
+FROM user_settings;
+
+-- Filter by JSON value
+SELECT * FROM user_settings
+WHERE settings->>'$.theme' = 'dark';
+```
+
+#### Example 90: JSON functions
+
+```sql
+-- JSON_EXTRACT (same as -> operator)
+SELECT JSON_EXTRACT(settings, '$.language') FROM user_settings WHERE user_id = 1;
+-- Output: "en" (with quotes)
+
+-- JSON_UNQUOTE + JSON_EXTRACT (same as ->>)
+SELECT JSON_UNQUOTE(JSON_EXTRACT(settings, '$.language')) FROM user_settings WHERE user_id = 1;
+-- Output: en (without quotes)
+
+-- JSON_SET: update a JSON value
+UPDATE user_settings
+SET settings = JSON_SET(settings, '$.theme', 'blue')
+WHERE user_id = 1;
+
+-- JSON_INSERT: add a new key (only if it doesn't exist)
+UPDATE user_settings
+SET settings = JSON_INSERT(settings, '$.font_size', 14)
+WHERE user_id = 1;
+
+-- JSON_REMOVE: remove a key
+UPDATE user_settings
+SET settings = JSON_REMOVE(settings, '$.notifications.sms')
+WHERE user_id = 2;
+
+-- JSON_ARRAYAGG: aggregate values into a JSON array
+SELECT JSON_ARRAYAGG(name) AS all_users FROM user_settings;
+-- Output: ["Alice", "Bob"]
+
+-- JSON_OBJECTAGG: aggregate key-value pairs into a JSON object
+SELECT JSON_OBJECTAGG(name, settings->>'$.theme') AS user_themes FROM user_settings;
+-- Output: {"Alice": "blue", "Bob": "light"}
+```
+
+---
+
+### ✏️ Practice Exercise 34 (bonus)
+
+> **Difficulty:** ⭐⭐⭐ Advanced
+>
+> 1. Create a `products_extended` table with a JSON `attributes` column. Insert products with different attributes (color, weight, dimensions).
+> 2. Query products where the JSON attribute `color` equals "red".
+> 3. Use JSON_SET to update an attribute and JSON_REMOVE to delete one.
+
+---
+
+## Topic 37 — Replication Basics
+
+### 🌍 Real-Life Analogy
+
+Replication is like having a **backup singer** who mirrors everything the lead singer does in real-time. If the lead singer loses their voice (primary server fails), the backup can take over. It also lets multiple backup singers handle audience requests (read queries) to lighten the lead's load.
+
+---
+
+### 1️⃣ WHY — Why Replication?
+
+| Benefit | Explanation |
+|---|---|
+| **High availability** | If the primary goes down, a replica can take over |
+| **Read scaling** | Distribute read queries across replicas |
+| **Backup without downtime** | Back up from a replica, not the busy primary |
+| **Geographic distribution** | Place replicas close to users in different regions |
+
+---
+
+### 2️⃣ WHEN — When to Use Replication
+
+- Applications with high read-to-write ratios (blogs, e-commerce catalogs).
+- When zero-downtime deployments are required.
+- For disaster recovery across data centers.
+
+---
+
+### 3️⃣ HOW — Replication Architecture
+
+#### How It Works
+
+```
+┌──────────────┐    Binary Log     ┌──────────────┐
+│   Primary    │ ────────────────> │   Replica    │
+│  (Source)    │    (writes)       │  (Read-only) │
+│              │                   │              │
+│ Handles all  │                   │ Handles read │
+│ writes       │                   │ queries      │
+└──────────────┘                   └──────────────┘
+```
+
+1. **Primary** records all changes in the **binary log** (binlog).
+2. **Replica** reads the binlog and replays the changes.
+3. Applications send writes to the primary and reads to replicas.
+
+#### Example 91: Configuring replication (primary side)
+
+```sql
+-- On the PRIMARY server:
+-- 1. Enable binary logging in my.cnf:
+-- [mysqld]
+-- server-id = 1
+-- log-bin = mysql-bin
+-- binlog-format = ROW
+
+-- 2. Create a replication user
+CREATE USER 'repl_user'@'%' IDENTIFIED BY 'ReplP@ss123';
+GRANT REPLICATION SLAVE ON *.* TO 'repl_user'@'%';
+FLUSH PRIVILEGES;
+
+-- 3. Get the current binlog position
+SHOW MASTER STATUS;
+-- Note the File and Position values
+```
+
+#### Example 92: Configuring replication (replica side)
+
+```sql
+-- On the REPLICA server:
+-- 1. Configure in my.cnf:
+-- [mysqld]
+-- server-id = 2
+-- relay-log = mysql-relay-bin
+-- read-only = ON
+
+-- 2. Point to the primary
+CHANGE REPLICATION SOURCE TO
+    SOURCE_HOST = '192.168.1.100',
+    SOURCE_USER = 'repl_user',
+    SOURCE_PASSWORD = 'ReplP@ss123',
+    SOURCE_LOG_FILE = 'mysql-bin.000001',
+    SOURCE_LOG_POS = 154;
+
+-- 3. Start replication
+START REPLICA;
+
+-- 4. Check status
+SHOW REPLICA STATUS\G
+-- Look for: Replica_IO_Running: Yes, Replica_SQL_Running: Yes
+```
+
+---
+
+### ✏️ Practice Exercise 35 (bonus)
+
+> **Difficulty:** ⭐⭐⭐ Advanced
+>
+> 1. Explain the difference between synchronous and asynchronous replication.
+> 2. What happens if the primary server goes down? How do you promote a replica?
+> 3. When would you use MySQL Group Replication instead of traditional replication?
+
+---
+
+## 🏁 Part 8 Summary
+
+| Topic | Key Takeaway |
+|---|---|
+| **Stored Procedures** | Reusable, parameterized SQL programs. DELIMITER, IN/OUT, IF/ELSE, SIGNAL. |
+| **Triggers** | Automatic actions on INSERT/UPDATE/DELETE. Great for auditing and validation. |
+| **Views** | Named queries that act like virtual tables. Simplify, secure, and abstract. |
+| **JSON** | Native JSON type for semi-structured data. Use ->>, JSON_SET, JSON_EXTRACT. |
+| **Replication** | Primary-replica for read scaling, high availability, and backups. |
+
+> **Next up:** [Part 9: Real-World Projects & Comparisons](#part-9-real-world-projects--comparisons)
+
+---
+
+<!-- Part 9 will be added next -->
