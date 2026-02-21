@@ -27,6 +27,11 @@
 - [Topic 12 — UPDATE Data](#topic-12--update-data)
 - [Topic 13 — DELETE and TRUNCATE](#topic-13--delete-and-truncate)
 - [Topic 14 — Basic SELECT Queries](#topic-14--basic-select-queries)
+- [Topic 14A — String Functions](#topic-14a--string-functions)
+- [Topic 14B — Date & Time Functions](#topic-14b--date--time-functions)
+- [Topic 14C — Numeric Functions & Conditional Expressions](#topic-14c--numeric-functions--conditional-expressions)
+- [Topic 14D — ALTER TABLE Operations](#topic-14d--alter-table-operations)
+- [Topic 14E — Regular Expressions (REGEXP)](#topic-14e--regular-expressions-regexp)
 
 ### [Part 4: Data Modeling](#part-4-data-modeling)
 - [Topic 15 — Normalization (1NF, 2NF, 3NF)](#topic-15--normalization-1nf-2nf-3nf)
@@ -35,12 +40,13 @@
 - [Topic 18 — Entity-Relationship (ER) Diagrams](#topic-18--entity-relationship-er-diagrams)
 
 ### [Part 5: Querying Data](#part-5-querying-data)
-- [Topic 19 — JOINs](#topic-19--joins)
+- [Topic 19 — JOINs (All 7 Types)](#topic-19--joins)
 - [Topic 20 — Aggregate Functions](#topic-20--aggregate-functions)
 - [Topic 21 — Subqueries](#topic-21--subqueries)
 - [Topic 22 — Window Functions](#topic-22--window-functions)
 - [Topic 23 — UNION, INTERSECT, EXCEPT](#topic-23--union-intersect-except)
 - [Topic 24 — ORDER BY, GROUP BY, HAVING](#topic-24--order-by-group-by-having)
+- [Topic 24A — Common Table Expressions (CTEs)](#topic-24a--common-table-expressions-ctes)
 
 ### [Part 6: Transactions & Security](#part-6-transactions--security)
 - [Topic 25 — Transactions and ACID](#topic-25--transactions-and-acid)
@@ -60,6 +66,11 @@
 - [Topic 35 — Views](#topic-35--views)
 - [Topic 36 — JSON in MySQL](#topic-36--json-in-mysql)
 - [Topic 37 — Replication Basics](#topic-37--replication-basics)
+- [Topic 37A — Storage Engines (InnoDB vs MyISAM)](#topic-37a--storage-engines-innodb-vs-myisam)
+- [Topic 37B — Temporary Tables & Prepared Statements](#topic-37b--temporary-tables--prepared-statements)
+- [Topic 37C — Character Sets & Collations](#topic-37c--character-sets--collations)
+- [Topic 37D — User Variables, Session Variables & Cursors](#topic-37d--user-variables-session-variables--cursors)
+- [Topic 37E — Events (Scheduled Tasks)](#topic-37e--events-scheduled-tasks)
 
 ### [Part 9: Real-World Projects & Comparisons](#part-9-real-world-projects--comparisons)
 - [Project 1 — E-Commerce Database](#project-1--e-commerce-database)
@@ -1855,6 +1866,693 @@ LIMIT 5;
 
 ---
 
+## Topic 14A — String Functions
+
+### 🌍 Real-Life Analogy
+
+String functions are like a **word processor's find-and-replace, spell-check, and formatting tools** — they let you clean, transform, search, and combine text data stored in your database.
+
+---
+
+### 1️⃣ WHY — Why String Functions?
+
+- Clean dirty data (extra spaces, inconsistent casing).
+- Format output for reports and display.
+- Search and extract parts of text.
+- Combine columns into readable strings.
+
+---
+
+### 2️⃣ HOW — Essential String Functions
+
+#### Example 30: String manipulation functions
+
+```sql
+-- CONCAT: combine strings
+SELECT CONCAT('Hello', ' ', 'World') AS greeting;
+-- Output: Hello World
+
+-- CONCAT_WS: combine with a separator
+SELECT CONCAT_WS(', ', 'Alice', 'Bob', 'Charlie') AS names;
+-- Output: Alice, Bob, Charlie
+
+-- UPPER / LOWER: change case
+SELECT UPPER('hello world') AS upper_case, LOWER('HELLO WORLD') AS lower_case;
+-- Output: HELLO WORLD | hello world
+
+-- LENGTH: byte length | CHAR_LENGTH: character length
+SELECT LENGTH('Hello') AS byte_len, CHAR_LENGTH('Hello') AS char_len;
+-- Output: 5 | 5
+-- For UTF-8: LENGTH('é') = 2 bytes, CHAR_LENGTH('é') = 1 character
+
+-- SUBSTRING (or SUBSTR): extract part of a string
+SELECT SUBSTRING('Hello World', 1, 5) AS first_five;
+-- Output: Hello
+SELECT SUBSTRING('Hello World', 7) AS from_seventh;
+-- Output: World
+
+-- LEFT / RIGHT: get characters from start/end
+SELECT LEFT('Hello World', 5) AS left_five, RIGHT('Hello World', 5) AS right_five;
+-- Output: Hello | World
+
+-- TRIM / LTRIM / RTRIM: remove whitespace
+SELECT TRIM('   Hello   ') AS trimmed;
+-- Output: Hello
+SELECT TRIM(LEADING '0' FROM '00042') AS no_leading_zeros;
+-- Output: 42
+
+-- REPLACE: substitute text
+SELECT REPLACE('Hello World', 'World', 'MySQL') AS replaced;
+-- Output: Hello MySQL
+
+-- REVERSE: reverse a string
+SELECT REVERSE('Hello') AS reversed;
+-- Output: olleH
+
+-- REPEAT: repeat a string N times
+SELECT REPEAT('Ha', 3) AS laugh;
+-- Output: HaHaHa
+
+-- LPAD / RPAD: pad to a specified length
+SELECT LPAD('42', 5, '0') AS padded_left, RPAD('Hi', 10, '.') AS padded_right;
+-- Output: 00042 | Hi........
+
+-- LOCATE / INSTR: find position of substring (1-based; 0 = not found)
+SELECT LOCATE('World', 'Hello World') AS position;
+-- Output: 7
+
+-- FORMAT: format a number as a string with commas
+SELECT FORMAT(1234567.891, 2) AS formatted;
+-- Output: 1,234,567.89
+
+-- INSERT (string): insert text into a string at a position
+SELECT INSERT('Hello World', 6, 1, ' Beautiful') AS modified;
+-- Output: Hello Beautiful World
+```
+
+#### Example 31: Practical string usage in queries
+
+```sql
+-- Clean and format customer names
+SELECT
+    customer_id,
+    TRIM(UPPER(name)) AS clean_name,
+    LOWER(email) AS clean_email,
+    CONCAT(LEFT(name, 1), '. ', SUBSTRING_INDEX(email, '@', 1)) AS short_name
+FROM customers;
+
+-- Search for names containing a substring (case-insensitive)
+SELECT * FROM customers WHERE LOWER(name) LIKE '%smith%';
+
+-- Extract domain from email
+SELECT name, SUBSTRING_INDEX(email, '@', -1) AS email_domain
+FROM customers;
+
+-- Generate initials from a full name
+SELECT
+    name,
+    CONCAT(
+        LEFT(name, 1),
+        LEFT(SUBSTRING_INDEX(name, ' ', -1), 1)
+    ) AS initials
+FROM customers;
+```
+
+**Complete String Functions Reference:**
+
+| Function | Purpose | Example | Result |
+|---|---|---|---|
+| `CONCAT(a, b, ...)` | Join strings | `CONCAT('a','b')` | `ab` |
+| `CONCAT_WS(sep, a, b)` | Join with separator | `CONCAT_WS('-','2024','01')` | `2024-01` |
+| `UPPER(s)` | Uppercase | `UPPER('hi')` | `HI` |
+| `LOWER(s)` | Lowercase | `LOWER('HI')` | `hi` |
+| `LENGTH(s)` | Byte length | `LENGTH('Hi')` | `2` |
+| `CHAR_LENGTH(s)` | Character length | `CHAR_LENGTH('Hi')` | `2` |
+| `SUBSTRING(s, pos, len)` | Extract part | `SUBSTRING('Hello',1,3)` | `Hel` |
+| `LEFT(s, n)` / `RIGHT(s, n)` | First/last n chars | `LEFT('Hello',2)` | `He` |
+| `TRIM(s)` | Remove whitespace | `TRIM(' Hi ')` | `Hi` |
+| `REPLACE(s, from, to)` | Substitute text | `REPLACE('abc','b','x')` | `axc` |
+| `REVERSE(s)` | Reverse string | `REVERSE('abc')` | `cba` |
+| `LPAD(s, len, pad)` | Left-pad | `LPAD('5',3,'0')` | `005` |
+| `LOCATE(sub, s)` | Find position | `LOCATE('l','Hello')` | `3` |
+| `SUBSTRING_INDEX(s, d, n)` | Split by delimiter | `SUBSTRING_INDEX('a@b','@',1)` | `a` |
+| `FORMAT(n, d)` | Number → formatted string | `FORMAT(1234.5,2)` | `1,234.50` |
+
+---
+
+### ✏️ Practice Exercise 14A
+
+> **Difficulty:** ⭐⭐ Beginner–Intermediate
+>
+> 1. Write a query that displays all product names in uppercase with their prices formatted with 2 decimal places.
+> 2. Extract the first 3 characters of each product name as a product code.
+> 3. For the `customers` table, extract the email domain (part after @) for each customer.
+> 4. Clean a customer name by trimming whitespace and capitalizing the first letter of each word.
+
+---
+
+## Topic 14B — Date & Time Functions
+
+### 🌍 Real-Life Analogy
+
+Date functions are like a **calendar and clock toolkit** — they let you calculate ages, find deadlines, measure time differences, format dates for reports, and extract parts like year, month, or day.
+
+---
+
+### 1️⃣ WHY — Why Date Functions?
+
+- Calculate ages, durations, and deadlines.
+- Filter data by time ranges (this month's orders, last year's revenue).
+- Format dates for different locales and reports.
+- Schedule and track events.
+
+---
+
+### 2️⃣ HOW — Essential Date Functions
+
+#### Example 32: Getting current date and time
+
+```sql
+-- Current date and time
+SELECT NOW()      AS current_datetime;    -- 2026-02-21 14:30:00
+SELECT CURDATE()  AS current_date;        -- 2026-02-21
+SELECT CURTIME()  AS current_time;        -- 14:30:00
+SELECT UNIX_TIMESTAMP() AS epoch_seconds; -- 1771686600
+```
+
+#### Example 33: Extracting parts of a date
+
+```sql
+SELECT
+    NOW() AS full_datetime,
+    YEAR(NOW())    AS yr,       -- 2026
+    MONTH(NOW())   AS mo,       -- 2
+    DAY(NOW())     AS dy,       -- 21
+    HOUR(NOW())    AS hr,       -- 14
+    MINUTE(NOW())  AS min,      -- 30
+    SECOND(NOW())  AS sec,      -- 0
+    DAYNAME(NOW()) AS day_name, -- Saturday
+    MONTHNAME(NOW()) AS month_name, -- February
+    DAYOFWEEK(NOW()) AS dow,    -- 7 (1=Sunday, 7=Saturday)
+    DAYOFYEAR(NOW()) AS doy,    -- 52
+    WEEK(NOW())    AS week_num, -- 8
+    QUARTER(NOW()) AS qtr;      -- 1
+```
+
+#### Example 34: Date arithmetic
+
+```sql
+-- Add/subtract intervals
+SELECT DATE_ADD('2026-02-21', INTERVAL 30 DAY) AS plus_30_days;     -- 2026-03-23
+SELECT DATE_SUB('2026-02-21', INTERVAL 3 MONTH) AS minus_3_months;  -- 2025-11-21
+SELECT DATE_ADD(NOW(), INTERVAL 2 HOUR) AS plus_2_hours;
+
+-- Shorthand with + and -
+SELECT '2026-02-21' + INTERVAL 1 YEAR AS next_year;    -- 2027-02-21
+
+-- Difference between dates
+SELECT DATEDIFF('2026-12-31', '2026-01-01') AS days_in_year;  -- 364
+SELECT TIMESTAMPDIFF(MONTH, '2025-06-15', '2026-02-21') AS months_diff;  -- 8
+SELECT TIMESTAMPDIFF(YEAR, '1990-05-15', CURDATE()) AS age;  -- calculates age
+
+-- Last day of the month
+SELECT LAST_DAY('2026-02-21') AS month_end; -- 2026-02-28
+
+-- Find the next specific weekday
+-- E.g., next Monday (weekday 0=Monday ... 6=Sunday in some systems)
+```
+
+#### Example 35: Formatting dates
+
+```sql
+-- DATE_FORMAT: custom formatting
+SELECT DATE_FORMAT(NOW(), '%Y-%m-%d') AS iso_date;           -- 2026-02-21
+SELECT DATE_FORMAT(NOW(), '%d/%m/%Y') AS european_date;      -- 21/02/2026
+SELECT DATE_FORMAT(NOW(), '%M %d, %Y') AS pretty_date;       -- February 21, 2026
+SELECT DATE_FORMAT(NOW(), '%h:%i %p') AS twelve_hour_time;   -- 02:30 PM
+SELECT DATE_FORMAT(NOW(), '%W, %M %d, %Y') AS full_date;    -- Saturday, February 21, 2026
+
+-- STR_TO_DATE: parse a string into a date
+SELECT STR_TO_DATE('21-02-2026', '%d-%m-%Y') AS parsed_date; -- 2026-02-21
+SELECT STR_TO_DATE('Feb 21, 2026', '%b %d, %Y') AS parsed;  -- 2026-02-21
+```
+
+**Common Date Format Specifiers:**
+
+| Specifier | Meaning | Example |
+|---|---|---|
+| `%Y` | 4-digit year | 2026 |
+| `%y` | 2-digit year | 26 |
+| `%m` | Month (01-12) | 02 |
+| `%M` | Month name | February |
+| `%b` | Abbreviated month | Feb |
+| `%d` | Day (01-31) | 21 |
+| `%H` | Hour 24h (00-23) | 14 |
+| `%h` | Hour 12h (01-12) | 02 |
+| `%i` | Minutes (00-59) | 30 |
+| `%s` | Seconds (00-59) | 00 |
+| `%p` | AM/PM | PM |
+| `%W` | Weekday name | Saturday |
+
+#### Example 36: Date functions in real queries
+
+```sql
+-- Orders placed in the last 30 days
+SELECT * FROM orders
+WHERE order_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY);
+
+-- Group orders by month
+SELECT
+    DATE_FORMAT(order_date, '%Y-%m') AS month,
+    COUNT(*) AS order_count,
+    SUM(total) AS revenue
+FROM orders
+GROUP BY DATE_FORMAT(order_date, '%Y-%m')
+ORDER BY month;
+
+-- Calculate customer age from date of birth
+SELECT name, dob,
+    TIMESTAMPDIFF(YEAR, dob, CURDATE()) AS age
+FROM students
+ORDER BY age DESC;
+
+-- Find orders placed on weekdays only (Mon-Fri)
+SELECT * FROM orders
+WHERE DAYOFWEEK(order_date) BETWEEN 2 AND 6;
+```
+
+---
+
+### ✏️ Practice Exercise 14B
+
+> **Difficulty:** ⭐⭐ Beginner–Intermediate
+>
+> 1. Write a query that shows the current date, time, and timestamp.
+> 2. Calculate how many days are left until the end of the current year.
+> 3. Format a date column as "Month Day, Year" (e.g., "February 21, 2026").
+> 4. Find all orders placed in the current month.
+> 5. Calculate the average number of days between order date and today for all orders.
+
+---
+
+## Topic 14C — Numeric Functions & Conditional Expressions
+
+### 🌍 Real-Life Analogy
+
+Numeric functions are your **calculator** — rounding, absolute values, modulo. Conditional expressions are your **if-then logic** — like a traffic light deciding green or red based on conditions.
+
+---
+
+### 1️⃣ Numeric Functions
+
+```sql
+-- ROUND: round to N decimal places
+SELECT ROUND(3.14159, 2) AS rounded;    -- 3.14
+SELECT ROUND(3.5) AS rounded_int;       -- 4
+
+-- CEIL / CEILING: round UP to nearest integer
+SELECT CEIL(3.1) AS ceiling;            -- 4
+SELECT CEIL(-3.1) AS neg_ceiling;       -- -3
+
+-- FLOOR: round DOWN to nearest integer
+SELECT FLOOR(3.9) AS floored;           -- 3
+SELECT FLOOR(-3.9) AS neg_floor;        -- -4
+
+-- ABS: absolute value
+SELECT ABS(-42) AS absolute;            -- 42
+
+-- MOD: remainder (modulo)
+SELECT MOD(10, 3) AS remainder;         -- 1
+SELECT 10 % 3 AS remainder_alt;         -- 1
+
+-- POWER / POW: exponentiation
+SELECT POWER(2, 10) AS two_to_ten;      -- 1024
+
+-- SQRT: square root
+SELECT SQRT(144) AS root;               -- 12
+
+-- TRUNCATE: truncate to N decimals (no rounding)
+SELECT TRUNCATE(3.14159, 2) AS truncated; -- 3.14 (not 3.14 rounded)
+
+-- RAND: random number between 0 and 1
+SELECT RAND() AS random_num;            -- 0.7324... (varies)
+SELECT FLOOR(RAND() * 100) + 1 AS random_1_to_100;
+
+-- SIGN: returns -1, 0, or 1
+SELECT SIGN(-42) AS neg, SIGN(0) AS zero, SIGN(42) AS pos;
+-- Output: -1 | 0 | 1
+
+-- GREATEST / LEAST: max/min of a list of values
+SELECT GREATEST(10, 20, 5, 15) AS max_val;  -- 20
+SELECT LEAST(10, 20, 5, 15) AS min_val;     -- 5
+```
+
+---
+
+### 2️⃣ Conditional Expressions (CASE, IF, IFNULL, COALESCE)
+
+#### CASE Expression — The SQL "Switch Statement"
+
+```sql
+-- Simple CASE: match a value
+SELECT
+    product_name,
+    price,
+    CASE category
+        WHEN 'Electronics' THEN 'Tech'
+        WHEN 'Furniture'   THEN 'Home'
+        WHEN 'Stationery'  THEN 'Office'
+        ELSE 'Other'
+    END AS department
+FROM products;
+
+-- Searched CASE: evaluate conditions (more flexible)
+SELECT
+    product_name,
+    price,
+    CASE
+        WHEN price >= 500 THEN 'Premium'
+        WHEN price >= 100 THEN 'Mid-Range'
+        WHEN price >= 10  THEN 'Budget'
+        ELSE 'Bargain'
+    END AS price_tier
+FROM products;
+
+-- CASE in ORDER BY (custom sort order)
+SELECT product_name, category FROM products
+ORDER BY CASE category
+    WHEN 'Electronics' THEN 1
+    WHEN 'Furniture' THEN 2
+    WHEN 'Stationery' THEN 3
+    ELSE 4
+END;
+
+-- CASE with aggregations (pivot-style query)
+SELECT
+    category,
+    COUNT(*) AS total,
+    SUM(CASE WHEN price > 100 THEN 1 ELSE 0 END) AS expensive_count,
+    SUM(CASE WHEN price <= 100 THEN 1 ELSE 0 END) AS affordable_count
+FROM products
+GROUP BY category;
+```
+
+#### IF Function
+
+```sql
+-- IF(condition, true_value, false_value)
+SELECT
+    product_name,
+    stock,
+    IF(stock > 0, 'In Stock', 'Out of Stock') AS availability
+FROM products;
+
+-- Nested IF (avoid — use CASE instead for readability)
+SELECT
+    product_name,
+    IF(price > 500, 'Expensive', IF(price > 100, 'Moderate', 'Cheap')) AS tier
+FROM products;
+```
+
+#### IFNULL and COALESCE — Handling NULLs
+
+```sql
+-- IFNULL: replace NULL with a default (2 arguments only)
+SELECT
+    product_name,
+    IFNULL(category, 'Uncategorized') AS category
+FROM products;
+
+-- COALESCE: returns the FIRST non-NULL value (N arguments)
+SELECT
+    COALESCE(phone, email, 'No Contact Info') AS contact
+FROM customers;
+
+-- COALESCE is more flexible than IFNULL:
+SELECT COALESCE(NULL, NULL, 'third', 'fourth') AS first_non_null;
+-- Output: third
+
+-- NULLIF: returns NULL if two values are equal (useful to avoid division by zero)
+SELECT
+    product_name,
+    price / NULLIF(stock, 0) AS price_per_unit
+FROM products;
+-- If stock = 0, NULLIF returns NULL, preventing division-by-zero error
+```
+
+**Comparison Table:**
+
+| Function | Arguments | Purpose | Example |
+|---|---|---|---|
+| `IF(cond, t, f)` | 3 | Ternary: if-then-else | `IF(x>0, 'pos', 'neg')` |
+| `IFNULL(val, default)` | 2 | Replace NULL | `IFNULL(phone, 'N/A')` |
+| `COALESCE(v1, v2, ...)` | N | First non-NULL | `COALESCE(a, b, c)` |
+| `NULLIF(v1, v2)` | 2 | NULL if equal | `NULLIF(stock, 0)` |
+| `CASE WHEN...` | N | Multi-branch logic | See examples above |
+
+---
+
+### ✏️ Practice Exercise 14C
+
+> **Difficulty:** ⭐⭐ Intermediate
+>
+> 1. Write a CASE expression to classify products as 'High Stock' (stock > 100), 'Medium Stock' (50-100), or 'Low Stock' (< 50).
+> 2. Use COALESCE to display a customer's phone number, falling back to email, then 'No contact'.
+> 3. Use ROUND and FORMAT to display product prices as formatted currency.
+> 4. Generate a random number between 1000 and 9999 using RAND, FLOOR, and arithmetic.
+> 5. Use NULLIF to safely divide total_revenue by order_count without division-by-zero errors.
+
+---
+
+## Topic 14D — ALTER TABLE Operations
+
+### 🌍 Real-Life Analogy
+
+`ALTER TABLE` is like **remodeling a room** while people are still using it. You can add a new closet (column), remove a window (drop column), widen a doorway (modify column), or rename the room (rename table) — all without tearing down the building.
+
+---
+
+### 1️⃣ WHY — Why ALTER TABLE?
+
+- Requirements change — new features need new columns.
+- Performance tuning — add/remove indexes.
+- Schema evolution — rename columns, change data types.
+- Fix mistakes — correct constraints or defaults.
+
+---
+
+### 2️⃣ HOW — ALTER TABLE Operations
+
+```sql
+-- ADD a new column
+ALTER TABLE products ADD COLUMN description TEXT AFTER product_name;
+ALTER TABLE products ADD COLUMN weight DECIMAL(8,2) DEFAULT 0;
+
+-- ADD multiple columns at once
+ALTER TABLE products
+    ADD COLUMN color VARCHAR(30) AFTER description,
+    ADD COLUMN brand VARCHAR(50) AFTER color;
+
+-- DROP a column
+ALTER TABLE products DROP COLUMN weight;
+
+-- MODIFY a column (change type, constraints, default)
+ALTER TABLE products MODIFY COLUMN product_name VARCHAR(200) NOT NULL;
+ALTER TABLE products MODIFY COLUMN stock INT DEFAULT 0 NOT NULL;
+
+-- CHANGE a column (rename + modify)
+ALTER TABLE products CHANGE COLUMN product_name name VARCHAR(200) NOT NULL;
+-- CHANGE is like MODIFY but also lets you rename the column
+
+-- RENAME a table
+ALTER TABLE products RENAME TO inventory;
+-- or
+RENAME TABLE inventory TO products;
+
+-- ADD a constraint
+ALTER TABLE products ADD CONSTRAINT chk_price CHECK (price >= 0);
+ALTER TABLE products ADD CONSTRAINT uq_name UNIQUE (product_name);
+
+-- DROP a constraint
+ALTER TABLE products DROP CHECK chk_price;
+ALTER TABLE products DROP INDEX uq_name;
+
+-- ADD a foreign key to an existing table
+ALTER TABLE orders ADD CONSTRAINT fk_customer
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+    ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- DROP a foreign key
+ALTER TABLE orders DROP FOREIGN KEY fk_customer;
+
+-- ADD an index
+ALTER TABLE products ADD INDEX idx_category (category);
+
+-- DROP an index
+ALTER TABLE products DROP INDEX idx_category;
+
+-- Change AUTO_INCREMENT starting value
+ALTER TABLE products AUTO_INCREMENT = 1000;
+
+-- Change the table's storage engine
+ALTER TABLE products ENGINE = InnoDB;
+
+-- Change the default character set
+ALTER TABLE products CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+#### ON DELETE and ON UPDATE actions for Foreign Keys
+
+```sql
+-- What happens when the referenced row is deleted/updated?
+ALTER TABLE order_items ADD CONSTRAINT fk_order
+    FOREIGN KEY (order_id) REFERENCES orders(order_id)
+    ON DELETE CASCADE      -- delete order_items when order is deleted
+    ON UPDATE CASCADE;     -- update order_id in items when order_id changes
+
+-- Available actions:
+-- CASCADE    → propagate the change
+-- SET NULL   → set FK column to NULL
+-- SET DEFAULT → set FK to its default value (rarely supported)
+-- RESTRICT   → prevent the delete/update (default behavior)
+-- NO ACTION  → same as RESTRICT in MySQL
+```
+
+> ⚠️ **Warning:** `ALTER TABLE` on large tables can be slow and lock the table. For production databases, consider using tools like `pt-online-schema-change` or `gh-ost` for zero-downtime migrations.
+
+---
+
+### ✏️ Practice Exercise 14D
+
+> **Difficulty:** ⭐⭐ Intermediate
+>
+> 1. Add a `discount_pct` DECIMAL(5,2) column to the `products` table with a default of 0.
+> 2. Modify the `product_name` column to allow up to 200 characters.
+> 3. Add a UNIQUE constraint on the `email` column of `customers`.
+> 4. Add a foreign key with ON DELETE CASCADE to a table of your choice.
+> 5. Rename a table, then rename it back.
+
+---
+
+## Topic 14E — Regular Expressions (REGEXP)
+
+### 🌍 Real-Life Analogy
+
+If `LIKE` is a simple pattern matcher (wildcards only), `REGEXP` is a **powerful search engine** that understands complex patterns — like finding all phone numbers, emails, or specific word patterns in your data.
+
+---
+
+### 1️⃣ WHY — Why REGEXP?
+
+- `LIKE` only supports `%` (any chars) and `_` (one char) — very limited.
+- `REGEXP` supports character classes, alternation, quantifiers, anchors — much more powerful.
+- Essential for data validation and complex pattern matching.
+
+---
+
+### 2️⃣ WHEN — LIKE vs REGEXP
+
+| Task | LIKE | REGEXP |
+|---|---|---|
+| Starts with "A" | `LIKE 'A%'` | `REGEXP '^A'` |
+| Ends with "ing" | `LIKE '%ing'` | `REGEXP 'ing$'` |
+| Contains "phone" | `LIKE '%phone%'` | `REGEXP 'phone'` |
+| Starts with vowel | Not easy | `REGEXP '^[AEIOU]'` |
+| Contains a digit | Not possible | `REGEXP '[0-9]'` |
+| Matches "color" or "colour" | Two conditions | `REGEXP 'colou?r'` |
+
+---
+
+### 3️⃣ HOW — REGEXP Syntax
+
+```sql
+-- Basic pattern matching
+SELECT * FROM products WHERE product_name REGEXP 'phone';
+-- Matches: Headphones, Smartphone, Phone Case (contains "phone")
+
+-- ^ = starts with, $ = ends with
+SELECT * FROM products WHERE product_name REGEXP '^M';
+-- Matches: Monitor, Mouse (starts with M)
+
+SELECT * FROM products WHERE product_name REGEXP 'k$';
+-- Matches: Desk (ends with k)
+
+-- [abc] = character class (any one of a, b, c)
+SELECT * FROM customers WHERE name REGEXP '^[A-D]';
+-- Matches names starting with A, B, C, or D
+
+-- [0-9] = any digit
+SELECT * FROM customers WHERE phone REGEXP '[0-9]{10}';
+-- Matches phone numbers with exactly 10 digits
+
+-- | = alternation (OR)
+SELECT * FROM products WHERE category REGEXP 'Electronics|Furniture';
+-- Matches Electronics or Furniture
+
+-- . = any single character
+SELECT * FROM products WHERE product_name REGEXP 'M..se';
+-- Matches: Mouse (M + any 2 chars + se)
+
+-- * = zero or more, + = one or more, ? = zero or one
+SELECT * FROM customers WHERE name REGEXP 'Joh?n';
+-- Matches: Jon, John (h is optional)
+
+-- {n} = exactly n times, {n,m} = n to m times
+SELECT * FROM customers WHERE email REGEXP '[a-z]{3,}@';
+-- Matches: emails with 3+ lowercase letters before @
+
+-- NOT REGEXP (negation)
+SELECT * FROM products WHERE product_name NOT REGEXP '^[A-M]';
+-- Products NOT starting with A through M
+
+-- REGEXP_LIKE (MySQL 8.0+, same as REGEXP but function syntax)
+SELECT * FROM products WHERE REGEXP_LIKE(product_name, '^[A-M]', 'i');
+-- 'i' flag = case-insensitive
+
+-- REGEXP_REPLACE (MySQL 8.0+)
+SELECT REGEXP_REPLACE('Phone: 123-456-7890', '[^0-9]', '') AS digits_only;
+-- Output: 1234567890
+
+-- REGEXP_SUBSTR (MySQL 8.0+): extract matching substring
+SELECT REGEXP_SUBSTR('Order #12345 confirmed', '[0-9]+') AS order_num;
+-- Output: 12345
+
+-- REGEXP_INSTR (MySQL 8.0+): position of match
+SELECT REGEXP_INSTR('Hello World 123', '[0-9]') AS digit_position;
+-- Output: 13
+```
+
+**REGEXP Quick Reference:**
+
+| Pattern | Meaning | Example |
+|---|---|---|
+| `^` | Start of string | `^Hello` |
+| `$` | End of string | `world$` |
+| `.` | Any single character | `h.t` → hat, hit, hot |
+| `*` | Zero or more of previous | `ab*c` → ac, abc, abbc |
+| `+` | One or more of previous | `ab+c` → abc, abbc (not ac) |
+| `?` | Zero or one of previous | `colou?r` → color, colour |
+| `[abc]` | Any one of a, b, c | `[aeiou]` → any vowel |
+| `[^abc]` | NOT a, b, or c | `[^0-9]` → non-digit |
+| `[a-z]` | Range | `[A-Za-z]` → any letter |
+| `{n}` | Exactly n times | `[0-9]{3}` → 3 digits |
+| `{n,m}` | Between n and m times | `[a-z]{2,5}` |
+| `\|` | OR | `cat\|dog` |
+| `\\b` | Word boundary | `\\bword\\b` |
+
+---
+
+### ✏️ Practice Exercise 14E
+
+> **Difficulty:** ⭐⭐⭐ Intermediate–Advanced
+>
+> 1. Find all products whose names start with a vowel.
+> 2. Find customers whose email uses Gmail or Yahoo.
+> 3. Use REGEXP_REPLACE to mask phone numbers (replace middle 4 digits with ****).
+> 4. Find all products whose names contain exactly two words (one space).
+
+---
+
 ## 🏁 Part 3 Summary
 
 | Topic | Key Takeaway |
@@ -1865,6 +2563,11 @@ LIMIT 5;
 | **UPDATE** | Always use WHERE! Modifies existing rows in place. |
 | **DELETE / TRUNCATE** | DELETE for selective removal; TRUNCATE for fast full-table wipe. |
 | **SELECT** | The most-used statement. Master WHERE, ORDER BY, LIMIT, DISTINCT, and aliases. |
+| **String Functions** | CONCAT, UPPER, LOWER, TRIM, REPLACE, SUBSTRING — text processing toolkit. |
+| **Date Functions** | NOW, DATE_FORMAT, DATEDIFF, DATE_ADD — calendar and time toolkit. |
+| **Numeric & Conditional** | ROUND, CEIL, FLOOR + CASE, IF, IFNULL, COALESCE for logic and math. |
+| **ALTER TABLE** | Add/drop/modify columns, constraints, indexes on existing tables. |
+| **REGEXP** | Powerful pattern matching beyond LIKE — character classes, quantifiers, anchors. |
 
 > **Next up:** [Part 4: Data Modeling](#part-4-data-modeling) — Normalization, foreign keys, constraints, and ER diagrams.
 
@@ -2443,22 +3146,77 @@ Imagine two spreadsheets: one lists **students** and another lists **grades**. T
 - Normalization splits data across tables. JOINs bring it back together for queries.
 - Avoids storing duplicate data (e.g., student name in every grade row).
 - Enables complex reports spanning multiple entities.
+- Every real-world application needs JOINs — they are the backbone of relational querying.
 
 ---
 
-### 2️⃣ WHEN — When to Use Each JOIN Type
+### 2️⃣ HOW MANY — The 7 Types of JOINs in MySQL
 
-| JOIN Type | Use When |
-|---|---|
-| **INNER JOIN** | You only want rows that match in both tables |
-| **LEFT JOIN** | You want all rows from the left table, even without matches |
-| **RIGHT JOIN** | You want all rows from the right table, even without matches |
-| **CROSS JOIN** | You want every combination of rows (Cartesian product) |
-| **SELF JOIN** | A table references itself (e.g., employees and managers) |
+MySQL supports **7 types** of JOINs. Here is the complete list:
+
+| # | JOIN Type | Description | MySQL Support |
+|---|---|---|---|
+| 1 | **INNER JOIN** | Only matching rows from both tables | ✅ Native |
+| 2 | **LEFT (OUTER) JOIN** | All rows from left table + matching from right | ✅ Native |
+| 3 | **RIGHT (OUTER) JOIN** | All rows from right table + matching from left | ✅ Native |
+| 4 | **FULL (OUTER) JOIN** | All rows from both tables (matched + unmatched) | ⚠️ Emulated via UNION |
+| 5 | **CROSS JOIN** | Every combination of rows (Cartesian product) | ✅ Native |
+| 6 | **SELF JOIN** | A table joined with itself | ✅ Native (uses any JOIN type) |
+| 7 | **NATURAL JOIN** | Auto-matches columns with the same name | ✅ Native (use cautiously) |
+
+#### Visual Overview of All JOIN Types
+
+```
+   Table A       Table B         INNER JOIN         LEFT JOIN          RIGHT JOIN        FULL OUTER JOIN
+  ┌───────┐     ┌───────┐      ┌───────┐          ┌───────┐          ┌───────┐          ┌───────┐
+  │       │     │       │      │       │          │███████│          │       │          │███████│
+  │   A   │     │   B   │      │  A∩B  │          │  A∩B  │          │  A∩B  │          │  A∪B  │
+  │       │     │       │      │       │          │       │          │███████│          │███████│
+  └───────┘     └───────┘      └───────┘          └───────┘          └───────┘          └───────┘
+                                Only match         All A +            All B +            Everything
+                                in both            match from B       match from A       from both
+
+   CROSS JOIN      SELF JOIN        NATURAL JOIN
+  ┌───────────┐   ┌───┐            ┌───────┐
+  │ A × B     │   │ A │──┐         │  auto │
+  │ (all      │   │   │  │ same    │ match │  (matches on
+  │  combos)  │   │   │←─┘ table   │ cols  │   same-name columns)
+  └───────────┘   └───┘            └───────┘
+```
 
 ---
 
-### 3️⃣ HOW — JOIN Types Demonstrated
+### 3️⃣ WHEN — When to Use Each JOIN Type
+
+| JOIN Type | Use When | Real-World Example |
+|---|---|---|
+| **INNER JOIN** | You only want rows that match in both tables | Show orders with their customer names |
+| **LEFT JOIN** | You want all rows from the left table, even without matches | List all customers, even those with no orders |
+| **RIGHT JOIN** | You want all rows from the right table, even without matches | Show all departments, even those with no employees |
+| **FULL OUTER JOIN** | You want unmatched rows from BOTH sides | Reconcile two lists (all students + all grades, matched or not) |
+| **CROSS JOIN** | You want every combination of rows (Cartesian product) | Generate all size-color combinations for a product |
+| **SELF JOIN** | A table references itself | Employees and their managers (same table) |
+| **NATURAL JOIN** | Tables share an obvious column name and you want auto-matching | Quick prototyping (avoid in production — fragile!) |
+
+#### How to Choose: Decision Flowchart
+
+```
+Do you need rows from BOTH tables even if no match?
+├── YES → Do you need unmatched from BOTH sides?
+│         ├── YES → FULL OUTER JOIN (emulated in MySQL)
+│         └── NO  → Which side must keep all rows?
+│                   ├── Left table  → LEFT JOIN
+│                   └── Right table → RIGHT JOIN
+├── NO  → Do you need ALL combinations?
+│         ├── YES → CROSS JOIN
+│         └── NO  → INNER JOIN
+└── Is the table joining itself?
+          └── YES → SELF JOIN (using LEFT/INNER JOIN)
+```
+
+---
+
+### 4️⃣ HOW — All JOIN Types Demonstrated
 
 #### Setup data
 
@@ -2472,19 +3230,30 @@ CREATE TABLE students (
 );
 
 CREATE TABLE grades (
+    grade_id   INT AUTO_INCREMENT PRIMARY KEY,
     student_id INT,
     subject    VARCHAR(50),
     score      INT
 );
 
 INSERT INTO students VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie');
-INSERT INTO grades VALUES
+INSERT INTO grades (student_id, subject, score) VALUES
     (1, 'Math', 90), (1, 'Science', 85),
     (2, 'Math', 78),
     (4, 'History', 92);  -- student_id 4 doesn't exist in students
 ```
 
-#### Example 38: INNER JOIN
+**Data at a glance:**
+
+| students |  | grades |  |  |
+|---|---|---|---|---|
+| id=1, Alice | | student_id=1, Math, 90 | student_id=1, Science, 85 | |
+| id=2, Bob | | student_id=2, Math, 78 | | |
+| id=3, Charlie ← no grades | | student_id=4, History, 92 ← no student | | |
+
+---
+
+#### Example 38: INNER JOIN — Only Matching Rows
 
 ```sql
 -- Only returns rows where a match exists in BOTH tables
@@ -2503,17 +3272,25 @@ INNER JOIN grades g ON s.id = g.student_id;
 
 Charlie (no grades) and student_id 4 (no student record) are **excluded**.
 
+**When to use:** When you only care about records that exist in both tables. This is the most common JOIN type.
+
 ```
-INNER JOIN Diagram:
-  Students     Grades
-  ┌─────┐     ┌─────┐
-  │     │█████│     │   █ = matched rows (returned)
-  │     │█████│     │
-  │  ○  │     │  ○  │   ○ = unmatched rows (excluded)
-  └─────┘     └─────┘
+INNER JOIN Visualization:
+  Students         Grades
+  ┌──────────┐    ┌──────────┐
+  │ Alice  ──────────── Math   │
+  │ Alice  ──────────── Science│
+  │ Bob    ──────────── Math   │
+  │ Charlie ✗│    │✗ History  │  ✗ = excluded (no match)
+  └──────────┘    └──────────┘
+  Returns: 3 rows (only matched pairs)
 ```
 
-#### Example 39: LEFT JOIN
+> **Note:** `JOIN` and `INNER JOIN` are identical. The keyword `INNER` is optional but recommended for clarity.
+
+---
+
+#### Example 39: LEFT JOIN (LEFT OUTER JOIN) — All Left + Matching Right
 
 ```sql
 -- All students, even if they have no grades
@@ -2531,9 +3308,39 @@ LEFT JOIN grades g ON s.id = g.student_id;
 | Bob     | Math    | 78    |
 | Charlie | NULL    | NULL  |
 
-Charlie appears with NULLs for grade columns — because LEFT JOIN keeps all left-table rows.
+Charlie appears with NULLs for grade columns — because LEFT JOIN keeps **all** left-table rows.
 
-#### Example 40: RIGHT JOIN
+**When to use:** When you need all records from the "main" table, with optional data from the related table.
+
+```
+LEFT JOIN Visualization:
+  Students (ALL)     Grades (matching only)
+  ┌──────────┐      ┌──────────┐
+  │ Alice  ──────────── Math    │
+  │ Alice  ──────────── Science │
+  │ Bob    ──────────── Math    │
+  │ Charlie ──── NULL, NULL     │  ← kept with NULLs
+  └──────────┘      │✗ History  │  ✗ = excluded (no student)
+                     └──────────┘
+  Returns: 4 rows
+```
+
+**Useful pattern — Finding unmatched rows (LEFT JOIN + IS NULL):**
+
+```sql
+-- Students who have NO grades at all
+SELECT s.name
+FROM students s
+LEFT JOIN grades g ON s.id = g.student_id
+WHERE g.student_id IS NULL;
+-- Result: Charlie
+```
+
+> **Note:** `LEFT JOIN` and `LEFT OUTER JOIN` are identical. The keyword `OUTER` is optional.
+
+---
+
+#### Example 40: RIGHT JOIN (RIGHT OUTER JOIN) — All Right + Matching Left
 
 ```sql
 -- All grades, even if the student doesn't exist
@@ -2553,18 +3360,143 @@ RIGHT JOIN grades g ON s.id = g.student_id;
 
 The History grade for non-existent student 4 appears with NULL for name.
 
-#### Example 41: CROSS JOIN
+**When to use:** When you need all records from the right table with optional data from the left. In practice, you can usually rewrite a RIGHT JOIN as a LEFT JOIN by swapping table order.
+
+```
+RIGHT JOIN Visualization:
+  Students (matching)    Grades (ALL)
+  ┌──────────┐          ┌──────────┐
+  │ Alice  ──────────────── Math   │
+  │ Alice  ──────────────── Science│
+  │ Bob    ──────────────── Math   │
+  │✗ Charlie│    NULL ──── History │  ← kept with NULLs
+  └──────────┘          └──────────┘
+  Returns: 4 rows
+```
+
+> **Tip:** Most developers prefer LEFT JOIN and reorder the tables instead of using RIGHT JOIN — it reads more naturally left-to-right.
+
+---
+
+#### Example 40b: FULL OUTER JOIN — All Rows From Both Tables
+
+MySQL does **not** have a native `FULL OUTER JOIN` keyword, but you can emulate it with `UNION`:
+
+```sql
+-- Emulate FULL OUTER JOIN: all students + all grades, matched where possible
+SELECT s.name, g.subject, g.score
+FROM students s
+LEFT JOIN grades g ON s.id = g.student_id
+
+UNION
+
+SELECT s.name, g.subject, g.score
+FROM students s
+RIGHT JOIN grades g ON s.id = g.student_id;
+```
+
+**Result:**
+
+| name    | subject | score |
+|---------|---------|-------|
+| Alice   | Math    | 90    |
+| Alice   | Science | 85    |
+| Bob     | Math    | 78    |
+| Charlie | NULL    | NULL  |
+| NULL    | History | 92    |
+
+Both Charlie (no grades) AND History for student_id 4 (no student) appear.
+
+**When to use:** When you need a complete picture of BOTH tables. Common in data reconciliation tasks.
+
+```
+FULL OUTER JOIN Visualization:
+  Students (ALL)        Grades (ALL)
+  ┌──────────┐         ┌──────────┐
+  │ Alice  ────────────── Math    │
+  │ Alice  ────────────── Science │
+  │ Bob    ────────────── Math    │
+  │ Charlie ── NULL, NULL         │  ← left-only row
+  └──────────┘   NULL ── History  │  ← right-only row
+                        └──────────┘
+  Returns: 5 rows (everything from both sides)
+```
+
+**How the emulation works:**
+1. `LEFT JOIN` gets all students (including Charlie with NULLs)
+2. `RIGHT JOIN` gets all grades (including History with NULLs)
+3. `UNION` merges both results and removes duplicates
+
+---
+
+#### Example 41: CROSS JOIN — Cartesian Product (Every Combination)
 
 ```sql
 -- Every combination of students and subjects
 SELECT s.name, g.subject
 FROM students s
-CROSS JOIN (SELECT DISTINCT subject FROM grades) g;
+CROSS JOIN (SELECT DISTINCT subject FROM grades) g
+ORDER BY s.name, g.subject;
 ```
 
-**Result:** 3 students × 3 subjects = 9 rows (Cartesian product).
+**Result:** 3 students × 3 subjects = **9 rows**
 
-#### Example 42: SELF JOIN
+| name    | subject |
+|---------|---------|
+| Alice   | History |
+| Alice   | Math    |
+| Alice   | Science |
+| Bob     | History |
+| Bob     | Math    |
+| Bob     | Science |
+| Charlie | History |
+| Charlie | Math    |
+| Charlie | Science |
+
+**When to use:** Generating all possible combinations. Useful for:
+- Product configurations (all size × color × material combos)
+- Calendar/time slot generation
+- Test data generation
+
+```
+CROSS JOIN Visualization:
+  Students    Subjects       Result
+  ┌───────┐  ┌─────────┐    ┌─────────────────┐
+  │ Alice │  │ Math    │    │ Alice × Math    │
+  │ Bob   │ ×│ Science │ =  │ Alice × Science │
+  │Charlie│  │ History │    │ Alice × History │
+  └───────┘  └─────────┘    │ Bob   × Math    │
+   3 rows     3 rows         │ Bob   × Science │
+                              │ Bob   × History │
+                              │ Charlie × Math  │
+                              │ ...9 rows total │
+                              └─────────────────┘
+```
+
+> ⚠️ **Warning:** CROSS JOIN can produce enormous results! 1000 rows × 1000 rows = 1,000,000 rows. Always use wisely.
+
+**Real-world example — generating a sizes/colors matrix:**
+
+```sql
+CREATE TABLE sizes (size VARCHAR(5));
+CREATE TABLE colors (color VARCHAR(20));
+
+INSERT INTO sizes VALUES ('S'), ('M'), ('L'), ('XL');
+INSERT INTO colors VALUES ('Red'), ('Blue'), ('Black');
+
+-- Generate all product variants
+SELECT s.size, c.color
+FROM sizes s
+CROSS JOIN colors c
+ORDER BY s.size, c.color;
+-- Returns: 4 × 3 = 12 rows
+```
+
+---
+
+#### Example 42: SELF JOIN — A Table Joined With Itself
+
+A SELF JOIN is not a separate syntax — it uses INNER JOIN or LEFT JOIN, but **both sides reference the same table** with different aliases.
 
 ```sql
 -- Employees table where manager_id references another employee
@@ -2575,10 +3507,12 @@ CREATE TABLE employees_self (
 );
 
 INSERT INTO employees_self VALUES
-    (1, 'CEO',    NULL),
-    (2, 'VP Eng', 1),
-    (3, 'Dev',    2),
-    (4, 'VP Sales', 1);
+    (1, 'CEO',      NULL),
+    (2, 'VP Eng',   1),
+    (3, 'Dev Lead', 2),
+    (4, 'Dev',      3),
+    (5, 'VP Sales', 1),
+    (6, 'Sales Rep', 5);
 
 -- Self join: show each employee with their manager's name
 SELECT e.emp_name AS employee, m.emp_name AS manager
@@ -2592,8 +3526,258 @@ LEFT JOIN employees_self m ON e.manager_id = m.emp_id;
 |-----------|---------|
 | CEO       | NULL    |
 | VP Eng    | CEO     |
-| Dev       | VP Eng  |
+| Dev Lead  | VP Eng  |
+| Dev       | Dev Lead|
 | VP Sales  | CEO     |
+| Sales Rep | VP Sales|
+
+**When to use:**
+- **Org charts** — Employees and their managers
+- **Hierarchies** — Categories and subcategories (parent_id → category_id)
+- **Comparisons** — Find pairs within the same table (e.g., students in the same city)
+
+```
+SELF JOIN Visualization:
+  employees_self (AS e)    employees_self (AS m)
+  ┌──────────────┐        ┌──────────────┐
+  │ CEO (mgr:NULL)│───────│              │ ← NULL (no manager)
+  │ VP Eng (mgr:1)│───────│ CEO (id:1)   │
+  │ Dev Lead(mgr:2)│──────│ VP Eng (id:2)│
+  │ Dev    (mgr:3)│───────│ Dev Lead(id:3)│
+  └──────────────┘        └──────────────┘
+  Same table, different aliases!
+```
+
+**More self-join examples:**
+
+```sql
+-- Find all pairs of students (e.g., for group projects)
+-- Assumes a students table with id, name, city
+SELECT a.name AS student_1, b.name AS student_2, a.city
+FROM students a
+INNER JOIN students b ON a.city = b.city AND a.id < b.id;
+-- a.id < b.id prevents duplicate pairs (Alice-Bob vs Bob-Alice)
+
+-- Find employees who earn more than their manager
+SELECT e.emp_name AS employee, e.salary AS emp_salary,
+       m.emp_name AS manager, m.salary AS mgr_salary
+FROM employees e
+INNER JOIN employees m ON e.manager_id = m.emp_id
+WHERE e.salary > m.salary;
+```
+
+---
+
+#### Example 42b: NATURAL JOIN — Auto-Match on Same-Name Columns
+
+```sql
+-- NATURAL JOIN automatically matches columns with the same name
+-- If students has 'id' and grades has 'student_id', this WON'T work as expected
+-- The columns must have the SAME NAME
+
+-- Let's create tables where it works:
+CREATE TABLE authors (
+    author_id INT PRIMARY KEY,
+    name      VARCHAR(50)
+);
+
+CREATE TABLE books (
+    book_id   INT PRIMARY KEY,
+    title     VARCHAR(100),
+    author_id INT              -- same name as in authors table
+);
+
+INSERT INTO authors VALUES (1, 'Tolkien'), (2, 'Rowling');
+INSERT INTO books VALUES (1, 'The Hobbit', 1), (2, 'Harry Potter', 2), (3, 'Unknown', 99);
+
+-- NATURAL JOIN automatically matches on 'author_id'
+SELECT * FROM authors NATURAL JOIN books;
+-- Equivalent to: SELECT * FROM authors INNER JOIN books ON authors.author_id = books.author_id;
+```
+
+**Result:**
+
+| author_id | name    | book_id | title        |
+|-----------|---------|---------|--------------|
+| 1         | Tolkien | 1       | The Hobbit   |
+| 2         | Rowling | 2       | Harry Potter |
+
+> ⚠️ **Warning — Why NATURAL JOIN is dangerous in production:**
+> - Adding a new column with a coincidentally matching name silently changes the JOIN condition.
+> - It's implicit — readers can't see what columns are being matched.
+> - Use explicit `ON` or `USING` clauses instead for production code.
+
+---
+
+### 5️⃣ JOIN Syntax Variants: ON vs USING vs NATURAL
+
+MySQL offers three ways to specify join conditions:
+
+```sql
+-- 1. ON clause (most flexible, recommended)
+SELECT * FROM students s
+INNER JOIN grades g ON s.id = g.student_id;
+
+-- 2. USING clause (when both tables have the SAME column name)
+-- USING eliminates the duplicate column from results
+SELECT * FROM authors
+INNER JOIN books USING (author_id);
+-- Equivalent to: ON authors.author_id = books.author_id
+-- But the result only shows author_id ONCE
+
+-- 3. NATURAL JOIN (auto-matches all same-name columns — avoid in production)
+SELECT * FROM authors NATURAL JOIN books;
+```
+
+**Comparison:**
+
+| Feature | ON | USING | NATURAL |
+|---|---|---|---|
+| Column names must match | No | Yes | Yes |
+| Explicit condition | ✅ | ✅ (column name only) | ❌ (auto) |
+| Joins on different column names | ✅ | ❌ | ❌ |
+| Multiple conditions | ✅ | ✅ (multiple columns) | ❌ |
+| Production-safe | ✅ | ✅ | ❌ |
+| **Recommended** | **Yes** | **Yes** | **No** |
+
+```sql
+-- USING with multiple columns
+SELECT * FROM enrollments
+INNER JOIN student_courses USING (student_id, course_id);
+```
+
+---
+
+### 6️⃣ Multi-Table JOINs (3+ Tables)
+
+Real-world queries frequently join 3, 4, or even more tables in a single query.
+
+```sql
+-- Example: Students → Enrollments → Courses → Professors
+-- (4 tables joined together)
+
+-- Setup
+CREATE TABLE IF NOT EXISTS departments (
+    dept_id   INT PRIMARY KEY,
+    dept_name VARCHAR(50)
+);
+CREATE TABLE IF NOT EXISTS professors (
+    prof_id INT PRIMARY KEY,
+    name    VARCHAR(50),
+    dept_id INT
+);
+CREATE TABLE IF NOT EXISTS courses (
+    course_id   INT PRIMARY KEY,
+    course_name VARCHAR(100),
+    prof_id     INT
+);
+CREATE TABLE IF NOT EXISTS enrollments (
+    enrollment_id INT AUTO_INCREMENT PRIMARY KEY,
+    student_id    INT,
+    course_id     INT,
+    grade         CHAR(2)
+);
+
+-- 4-table JOIN: Show student name, course, professor, and department
+SELECT
+    s.name       AS student,
+    c.course_name AS course,
+    p.name       AS professor,
+    d.dept_name  AS department,
+    e.grade
+FROM students s
+INNER JOIN enrollments e ON s.id = e.student_id       -- student ↔ enrollment
+INNER JOIN courses c     ON e.course_id = c.course_id  -- enrollment ↔ course
+INNER JOIN professors p  ON c.prof_id = p.prof_id      -- course ↔ professor
+INNER JOIN departments d ON p.dept_id = d.dept_id      -- professor ↔ department
+ORDER BY s.name, c.course_name;
+```
+
+**How multi-table JOINs work step by step:**
+
+```
+Step 1: students ⟕ enrollments    → result_1 (students with their enrollments)
+Step 2: result_1 ⟕ courses        → result_2 (add course details)
+Step 3: result_2 ⟕ professors     → result_3 (add professor details)
+Step 4: result_3 ⟕ departments    → final   (add department details)
+```
+
+**Mixing JOIN types in multi-table queries:**
+
+```sql
+-- Left join to include students with NO enrollments,
+-- but inner join for course → professor (every course must have a professor)
+SELECT s.name AS student, c.course_name, p.name AS professor
+FROM students s
+LEFT JOIN enrollments e  ON s.id = e.student_id          -- keep all students
+LEFT JOIN courses c      ON e.course_id = c.course_id    -- keep enrollment NULLs
+INNER JOIN professors p  ON c.prof_id = p.prof_id        -- only where professor exists
+ORDER BY s.name;
+```
+
+---
+
+### 7️⃣ JOIN Performance Tips
+
+| Tip | Why |
+|---|---|
+| **Always index JOIN columns** | JOINs on non-indexed columns cause full table scans |
+| **Index foreign key columns** | FK columns are the most common JOIN conditions |
+| **Use INNER JOIN when possible** | Narrower results = less work for MySQL |
+| **Avoid CROSS JOIN on large tables** | 1M × 1M = 1 trillion rows! |
+| **Put the smaller table first** | MySQL's optimizer usually handles this, but it helps readability |
+| **Use EXPLAIN to verify** | Check that MySQL uses indexes for the JOIN |
+| **JOIN vs Subquery** | JOINs are usually faster; use EXPLAIN to confirm |
+
+```sql
+-- Verify JOIN uses indexes
+EXPLAIN SELECT s.name, g.subject
+FROM students s
+INNER JOIN grades g ON s.id = g.student_id;
+-- Look for 'type: ref' or 'type: eq_ref' (good)
+-- Avoid 'type: ALL' (full table scan — bad)
+```
+
+---
+
+### 8️⃣ Common JOIN Mistakes & How to Fix Them
+
+| Mistake | Problem | Fix |
+|---|---|---|
+| Missing ON clause | Becomes a CROSS JOIN (Cartesian product!) | Always specify ON or USING |
+| Wrong JOIN column | Incorrect or meaningless results | Verify the relationship between tables |
+| Forgetting NULL handling | LEFT JOIN NULLs cause wrong aggregations | Use COALESCE or filter NULLs |
+| Using WHERE instead of ON | Changes LEFT/RIGHT JOIN into INNER JOIN | Put join conditions in ON, filters in WHERE |
+| Not aliasing tables | Ambiguous column errors with same-name columns | Always alias tables in JOINs |
+
+```sql
+-- ❌ MISTAKE: WHERE on a LEFT JOIN effectively makes it INNER JOIN
+SELECT s.name, g.subject
+FROM students s
+LEFT JOIN grades g ON s.id = g.student_id
+WHERE g.subject = 'Math';
+-- Charlie disappears! The WHERE filters out NULLs.
+
+-- ✅ FIX: Put the condition in the ON clause to keep all left rows
+SELECT s.name, g.subject
+FROM students s
+LEFT JOIN grades g ON s.id = g.student_id AND g.subject = 'Math';
+-- Charlie appears with NULL (preserved by LEFT JOIN)
+```
+
+---
+
+### 📊 Complete JOIN Comparison Summary
+
+| JOIN Type | Left Unmatched | Right Unmatched | Matched Rows | NULL-Filled | Common Use |
+|---|---|---|---|---|---|
+| **INNER** | ❌ Excluded | ❌ Excluded | ✅ Returned | No | Default — most common |
+| **LEFT** | ✅ Kept | ❌ Excluded | ✅ Returned | Right side → NULL | "All from main + optional related" |
+| **RIGHT** | ❌ Excluded | ✅ Kept | ✅ Returned | Left side → NULL | Rarely used; rewrite as LEFT |
+| **FULL OUTER** | ✅ Kept | ✅ Kept | ✅ Returned | Both sides → NULL | Data reconciliation |
+| **CROSS** | N/A | N/A | All × All | No | Combinations, matrix generation |
+| **SELF** | Depends on type | Depends on type | ✅ | Depends | Hierarchies, comparisons |
+| **NATURAL** | ❌ (like INNER) | ❌ (like INNER) | ✅ | No | Prototyping only |
 
 ---
 
@@ -2601,9 +3785,13 @@ LEFT JOIN employees_self m ON e.manager_id = m.emp_id;
 
 > **Difficulty:** ⭐⭐ Intermediate
 >
-> 1. Using the `students` and `grades` tables, write a LEFT JOIN that shows all students and their grades. Filter to show only students with no grades (hint: `WHERE g.subject IS NULL`).
-> 2. Create `employees` and `departments` tables. Write an INNER JOIN to show employee names with department names.
-> 3. Create a self-referencing `categories` table (parent_id → category_id) and query to show each category with its parent name.
+> 1. Using the `students` and `grades` tables, write a LEFT JOIN that shows all students and their grades. Filter to show only students with no grades (hint: `WHERE g.student_id IS NULL`).
+> 2. Write a FULL OUTER JOIN (using UNION) between `students` and `grades` — show all unmatched rows from both sides.
+> 3. Create `employees` and `departments` tables. Write an INNER JOIN to show employee names with department names. Then rewrite it as a LEFT JOIN — what changes?
+> 4. Create a self-referencing `categories` table (parent_id → category_id) and query to show each category with its parent name.
+> 5. Write a CROSS JOIN to generate all combinations of sizes (S, M, L, XL) and colors (Red, Blue, Green).
+> 6. Join 3 tables together: `orders → order_items → products` to show order details with product names.
+> 7. Explain the difference between putting a filter in the `ON` clause vs the `WHERE` clause for a LEFT JOIN.
 
 ---
 
@@ -3101,16 +4289,289 @@ ORDER BY category ASC, price DESC;
 
 ---
 
+## Topic 24A — Common Table Expressions (CTEs)
+
+### 🌍 Real-Life Analogy
+
+A CTE is like writing a **draft paragraph** before using it in your essay. You define a temporary named result set at the top of your query, then reference it below — making complex queries much more readable and maintainable.
+
+---
+
+### 1️⃣ WHY — Why CTEs?
+
+| Problem Without CTEs | Solution With CTEs |
+|---|---|
+| Deeply nested subqueries are hard to read | Named CTEs break queries into logical steps |
+| Repeating the same subquery in multiple places | Define once in a CTE, reference many times |
+| Recursive data (hierarchies, trees) impossible | Recursive CTEs handle parent-child traversals |
+| No way to self-reference a subquery | Recursive CTEs reference themselves |
+
+---
+
+### 2️⃣ WHEN — When to Use CTEs
+
+| Scenario | CTE Type |
+|---|---|
+| Breaking a complex query into readable steps | Non-recursive CTE |
+| Reusing the same subquery result multiple times | Non-recursive CTE |
+| Traversing hierarchies (org charts, category trees) | Recursive CTE |
+| Generating sequences (numbers, dates) | Recursive CTE |
+| Replacing complex subqueries for readability | Non-recursive CTE |
+
+---
+
+### 3️⃣ HOW — CTE Syntax and Examples
+
+#### Basic CTE Syntax
+
+```sql
+WITH cte_name AS (
+    -- CTE query (the "draft paragraph")
+    SELECT ...
+)
+-- Main query that uses the CTE
+SELECT * FROM cte_name;
+```
+
+#### Example 24A-1: Non-recursive CTE — simplify complex queries
+
+```sql
+-- Without CTE (nested subquery — harder to read):
+SELECT name, total_spent
+FROM (
+    SELECT c.name, SUM(o.total) AS total_spent
+    FROM customers c
+    JOIN orders o ON c.customer_id = o.customer_id
+    WHERE o.status != 'cancelled'
+    GROUP BY c.customer_id, c.name
+) AS customer_spending
+WHERE total_spent > 200;
+
+-- With CTE (same result, much cleaner):
+WITH customer_spending AS (
+    SELECT c.name, SUM(o.total) AS total_spent
+    FROM customers c
+    JOIN orders o ON c.customer_id = o.customer_id
+    WHERE o.status != 'cancelled'
+    GROUP BY c.customer_id, c.name
+)
+SELECT name, total_spent
+FROM customer_spending
+WHERE total_spent > 200
+ORDER BY total_spent DESC;
+```
+
+#### Example 24A-2: Multiple CTEs — chain logic steps
+
+```sql
+-- Step 1: Calculate monthly revenue
+-- Step 2: Calculate month-over-month growth
+-- Step 3: Filter to growing months only
+
+WITH monthly_revenue AS (
+    SELECT
+        DATE_FORMAT(order_date, '%Y-%m') AS month,
+        SUM(total) AS revenue
+    FROM orders
+    WHERE status != 'cancelled'
+    GROUP BY DATE_FORMAT(order_date, '%Y-%m')
+),
+revenue_with_growth AS (
+    SELECT
+        month,
+        revenue,
+        LAG(revenue) OVER (ORDER BY month) AS prev_revenue,
+        ROUND(
+            (revenue - LAG(revenue) OVER (ORDER BY month))
+            / LAG(revenue) OVER (ORDER BY month) * 100, 1
+        ) AS growth_pct
+    FROM monthly_revenue
+)
+SELECT * FROM revenue_with_growth
+WHERE growth_pct > 0
+ORDER BY month;
+```
+
+#### Example 24A-3: CTE referenced multiple times
+
+```sql
+-- Calculate category stats, then use them in two different ways
+WITH category_stats AS (
+    SELECT
+        category,
+        COUNT(*) AS product_count,
+        AVG(price) AS avg_price,
+        SUM(stock) AS total_stock
+    FROM products
+    GROUP BY category
+)
+-- Use the CTE twice: once for the main query, once for a comparison
+SELECT
+    cs.category,
+    cs.product_count,
+    ROUND(cs.avg_price, 2) AS avg_price,
+    cs.total_stock,
+    ROUND(cs.avg_price / overall.global_avg * 100, 1) AS pct_of_global_avg
+FROM category_stats cs
+CROSS JOIN (
+    SELECT AVG(avg_price) AS global_avg FROM category_stats
+) AS overall
+ORDER BY cs.avg_price DESC;
+```
+
+#### Example 24A-4: Recursive CTE — Org Chart / Hierarchy
+
+```sql
+-- Recursive CTEs traverse parent-child relationships!
+-- Start from a root node and follow links to children
+
+CREATE TABLE categories_tree (
+    id        INT PRIMARY KEY,
+    name      VARCHAR(50),
+    parent_id INT
+);
+
+INSERT INTO categories_tree VALUES
+    (1, 'All Products',  NULL),
+    (2, 'Electronics',   1),
+    (3, 'Computers',     2),
+    (4, 'Laptops',       3),
+    (5, 'Desktops',      3),
+    (6, 'Phones',        2),
+    (7, 'Clothing',      1),
+    (8, 'Men',           7),
+    (9, 'Women',         7);
+
+-- Recursive CTE: show the full category hierarchy with depth
+WITH RECURSIVE category_tree AS (
+    -- Base case: start from root nodes (no parent)
+    SELECT id, name, parent_id, 0 AS depth, CAST(name AS CHAR(500)) AS path
+    FROM categories_tree
+    WHERE parent_id IS NULL
+
+    UNION ALL
+
+    -- Recursive step: join children to their parents
+    SELECT c.id, c.name, c.parent_id, ct.depth + 1,
+           CONCAT(ct.path, ' → ', c.name)
+    FROM categories_tree c
+    INNER JOIN category_tree ct ON c.parent_id = ct.id
+)
+SELECT
+    CONCAT(REPEAT('  ', depth), name) AS indented_name,
+    depth,
+    path
+FROM category_tree
+ORDER BY path;
+```
+
+**Result:**
+
+| indented_name       | depth | path                                    |
+|---------------------|-------|-----------------------------------------|
+| All Products        | 0     | All Products                            |
+|   Clothing          | 1     | All Products → Clothing                 |
+|     Men             | 2     | All Products → Clothing → Men           |
+|     Women           | 2     | All Products → Clothing → Women         |
+|   Electronics       | 1     | All Products → Electronics              |
+|     Computers       | 2     | All Products → Electronics → Computers  |
+|       Desktops      | 3     | All Products → Electronics → Computers → Desktops |
+|       Laptops       | 3     | All Products → Electronics → Computers → Laptops  |
+|     Phones          | 2     | All Products → Electronics → Phones     |
+
+#### Example 24A-5: Recursive CTE — Generate a Date Series
+
+```sql
+-- Generate all dates in January 2026 (no table needed!)
+WITH RECURSIVE date_series AS (
+    SELECT DATE('2026-01-01') AS dt
+    UNION ALL
+    SELECT DATE_ADD(dt, INTERVAL 1 DAY)
+    FROM date_series
+    WHERE dt < '2026-01-31'
+)
+SELECT dt AS date FROM date_series;
+-- Returns 31 rows: 2026-01-01 through 2026-01-31
+
+-- Practical use: find dates with NO orders (gaps in data)
+WITH RECURSIVE date_series AS (
+    SELECT DATE('2024-01-01') AS dt
+    UNION ALL
+    SELECT DATE_ADD(dt, INTERVAL 1 DAY)
+    FROM date_series
+    WHERE dt < '2024-03-31'
+)
+SELECT ds.dt AS missing_date
+FROM date_series ds
+LEFT JOIN orders o ON ds.dt = o.order_date
+WHERE o.order_id IS NULL
+ORDER BY ds.dt;
+```
+
+#### Example 24A-6: Recursive CTE — Employee Reporting Chain
+
+```sql
+-- Find all reports (direct and indirect) under a specific manager
+WITH RECURSIVE reporting_chain AS (
+    -- Base case: the manager themselves
+    SELECT emp_id, emp_name, manager_id, 1 AS level
+    FROM employees_self
+    WHERE emp_id = 1  -- Start from CEO
+
+    UNION ALL
+
+    -- Recursive: find all employees who report to someone in the chain
+    SELECT e.emp_id, e.emp_name, e.manager_id, rc.level + 1
+    FROM employees_self e
+    INNER JOIN reporting_chain rc ON e.manager_id = rc.emp_id
+)
+SELECT
+    CONCAT(REPEAT('  ', level - 1), emp_name) AS org_chart,
+    level
+FROM reporting_chain
+ORDER BY level, emp_name;
+```
+
+> ⚠️ **Warning:** Recursive CTEs need a termination condition! Without one, they run forever. MySQL has a default limit of 1000 recursions (`cte_max_recursion_depth`). You can increase it:
+> ```sql
+> SET SESSION cte_max_recursion_depth = 5000;
+> ```
+
+**CTE vs Subquery vs Temporary Table:**
+
+| Feature | CTE | Subquery | Temporary Table |
+|---|---|---|---|
+| Readability | ✅ Best | ❌ Nested = hard | ✅ Good |
+| Reusability in same query | ✅ Multiple references | ❌ Must repeat | ✅ Multiple queries |
+| Recursive | ✅ Yes | ❌ No | ❌ No |
+| Persists after query | ❌ No | ❌ No | ✅ Until session ends |
+| Performance | Same as subquery | Same as CTE | May be faster (materialized) |
+
+---
+
+### ✏️ Practice Exercise 24A
+
+> **Difficulty:** ⭐⭐⭐ Advanced
+>
+> 1. Rewrite a complex subquery you've written before as a CTE. Compare readability.
+> 2. Write a CTE that calculates average order value per customer, then finds customers above the global average.
+> 3. Create a recursive CTE to traverse the `categories_tree` table and show each category with its full path.
+> 4. Use a recursive CTE to generate all dates in the current month.
+> 5. Chain 3 CTEs together: monthly sales → running total → growth percentage.
+
+---
+
 ## 🏁 Part 5 Summary
 
 | Topic | Key Takeaway |
 |---|---|
-| **JOINs** | INNER (both match), LEFT (all left), RIGHT (all right), CROSS (all combos), SELF (table with itself). |
+| **JOINs** | 7 types: INNER, LEFT, RIGHT, FULL OUTER (emulated), CROSS, SELF, NATURAL. Use ON/USING for conditions. |
 | **Aggregations** | COUNT, SUM, AVG, MIN, MAX + GROUP BY to summarize. HAVING filters groups. |
 | **Subqueries** | Queries within queries. Scalar, table, correlated, and EXISTS forms. |
 | **Window Functions** | ROW_NUMBER, RANK, LAG, LEAD, running totals — calculate across related rows without collapsing. |
 | **Set Operations** | UNION (merge), INTERSECT (common), EXCEPT (difference). |
 | **ORDER/GROUP/HAVING** | Sort, group, and filter groups — the backbone of reporting queries. |
+| **CTEs** | WITH clause for readable, reusable, and recursive query building. |
 
 > **Next up:** [Part 6: Transactions & Security](#part-6-transactions--security) — ACID properties, isolation levels, users, privileges, and backups.
 
@@ -4441,6 +5902,485 @@ SHOW REPLICA STATUS\G
 
 ---
 
+---
+
+## Topic 37A — Storage Engines (InnoDB vs MyISAM)
+
+### 🌍 Real-Life Analogy
+
+A storage engine is like the **filing system** inside the cabinet. You might use fireproof folders for important documents (InnoDB — safe, transactional) or lightweight paper folders for quick-access reference sheets (MyISAM — fast reads). The cabinet (MySQL server) stays the same, but how files are stored and accessed changes.
+
+---
+
+### 1️⃣ WHY — Why Do Storage Engines Matter?
+
+MySQL is unique among databases — it supports **pluggable storage engines**. The engine determines how data is physically stored, indexed, locked, and recovered. Choosing the right engine affects performance, reliability, and features.
+
+---
+
+### 2️⃣ WHEN — Comparison Table
+
+| Feature | InnoDB (Default) | MyISAM | MEMORY | ARCHIVE |
+|---|---|---|---|---|
+| **Transactions** | ✅ Yes (ACID) | ❌ No | ❌ No | ❌ No |
+| **Foreign Keys** | ✅ Yes | ❌ No | ❌ No | ❌ No |
+| **Row-level Locking** | ✅ Yes | ❌ Table-level | ✅ Yes | ❌ No |
+| **Crash Recovery** | ✅ Automatic | ❌ Manual repair | N/A (RAM) | ✅ Yes |
+| **Full-text Index** | ✅ Yes (5.6+) | ✅ Yes | ❌ No | ❌ No |
+| **Data Caching** | ✅ Buffer pool | ❌ OS cache only | ✅ In RAM | ❌ No |
+| **Compression** | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes (high) |
+| **Best For** | General purpose, OLTP | Read-heavy, legacy | Temp data, caching | Archival, logs |
+| **COUNT(*) Speed** | Slower (counts rows) | ⚡ Instant (stored) | Fast | Slow |
+
+---
+
+### 3️⃣ HOW — Working with Storage Engines
+
+```sql
+-- Check current default engine
+SHOW VARIABLES LIKE 'default_storage_engine';
+-- Output: InnoDB
+
+-- See all available engines
+SHOW ENGINES;
+
+-- Check which engine a table uses
+SHOW TABLE STATUS LIKE 'products';
+-- Look at the Engine column
+
+-- Create a table with a specific engine
+CREATE TABLE fast_cache (
+    id INT PRIMARY KEY,
+    data VARCHAR(255)
+) ENGINE = MEMORY;
+
+CREATE TABLE log_archive (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE = ARCHIVE;
+
+-- Change an existing table's engine (rewrites entire table!)
+ALTER TABLE old_table ENGINE = InnoDB;
+
+-- Create a MyISAM table (rare in modern MySQL)
+CREATE TABLE legacy_table (
+    id INT PRIMARY KEY,
+    name VARCHAR(100)
+) ENGINE = MyISAM;
+```
+
+#### When to Choose Which Engine
+
+| Scenario | Engine | Why |
+|---|---|---|
+| Any new project | **InnoDB** | Transactions, FK, crash recovery — no reason not to |
+| Legacy system that uses MyISAM | **InnoDB** (migrate!) | MyISAM lacks transactions and crash safety |
+| Temporary lookup tables | **MEMORY** | Lightning-fast but data lost on restart |
+| Write-once log archival | **ARCHIVE** | Excellent compression, append-only |
+| Full-text search on older MySQL | **MyISAM** | Historically better FTS (InnoDB caught up in 5.6+) |
+
+> **Best Practice:** Use **InnoDB** for everything unless you have a very specific reason not to. It's been the default since MySQL 5.5 for good reason.
+
+---
+
+## Topic 37B — Temporary Tables & Prepared Statements
+
+### Temporary Tables
+
+Temporary tables exist only for the duration of your session. They are invisible to other connections and are automatically dropped when the session ends.
+
+```sql
+-- Create a temporary table
+CREATE TEMPORARY TABLE temp_high_value_products AS
+SELECT product_id, product_name, price, stock, price * stock AS inventory_value
+FROM products
+WHERE price * stock > 1000;
+
+-- Use it like any regular table
+SELECT * FROM temp_high_value_products ORDER BY inventory_value DESC;
+
+-- Join temporary tables with regular tables
+SELECT t.product_name, t.inventory_value, c.category_name
+FROM temp_high_value_products t
+JOIN categories c ON t.category_id = c.category_id;
+
+-- Temporary tables are session-specific:
+-- Session 1 can have a temp_orders table
+-- Session 2 can have a DIFFERENT temp_orders table
+-- They don't interfere with each other
+
+-- Explicitly drop when done (optional — auto-dropped on disconnect)
+DROP TEMPORARY TABLE IF EXISTS temp_high_value_products;
+```
+
+**When to use temporary tables:**
+- Break complex queries into manageable steps.
+- Store intermediate results for multi-step reports.
+- Avoid repeating expensive subqueries.
+- Import/transform data before loading into permanent tables.
+
+**Temporary Table vs CTE vs Subquery:**
+
+| Feature | Temporary Table | CTE | Subquery |
+|---|---|---|---|
+| Scope | Entire session | Single query | Single query |
+| Reusable | ✅ Across queries | ✅ Within query | ❌ Must repeat |
+| Indexed | ✅ Can add indexes | ❌ No | ❌ No |
+| Materialized | ✅ Always | ❌ MySQL may not | ❌ No |
+| Recursive | ❌ No | ✅ Yes | ❌ No |
+
+---
+
+### Prepared Statements
+
+Prepared statements are **pre-compiled SQL templates** with placeholders. They prevent **SQL injection** and improve performance for repeated queries.
+
+```sql
+-- 1. PREPARE: create a template with ? placeholders
+PREPARE stmt_find_product FROM
+    'SELECT product_name, price FROM products WHERE category = ? AND price > ?';
+
+-- 2. SET variables and EXECUTE
+SET @cat = 'Electronics';
+SET @min_price = 100;
+EXECUTE stmt_find_product USING @cat, @min_price;
+
+-- 3. Execute again with different values (reuses the compiled plan)
+SET @cat = 'Furniture';
+SET @min_price = 200;
+EXECUTE stmt_find_product USING @cat, @min_price;
+
+-- 4. DEALLOCATE when done
+DEALLOCATE PREPARE stmt_find_product;
+
+-- Prepared INSERT
+PREPARE stmt_insert FROM
+    'INSERT INTO customers (name, email, city) VALUES (?, ?, ?)';
+
+SET @name = 'Frank Wilson';
+SET @email = 'frank@example.com';
+SET @city = 'Denver';
+EXECUTE stmt_insert USING @name, @email, @city;
+
+DEALLOCATE PREPARE stmt_insert;
+```
+
+**Why Prepared Statements Prevent SQL Injection:**
+
+```sql
+-- Without prepared statement (DANGEROUS in application code):
+-- query = "SELECT * FROM users WHERE name = '" + user_input + "'"
+-- If user_input = "'; DROP TABLE users; --"
+-- Result: SELECT * FROM users WHERE name = ''; DROP TABLE users; --'
+
+-- With prepared statement (SAFE):
+-- The database treats the ? parameter as a VALUE, never as SQL code
+-- Even if user_input = "'; DROP TABLE users; --"
+-- It searches for a user literally named "'; DROP TABLE users; --"
+-- The SQL structure is FIXED and cannot be altered by input
+
+PREPARE safe_query FROM 'SELECT * FROM users WHERE name = ?';
+SET @input = "'; DROP TABLE users; --";
+EXECUTE safe_query USING @input;
+-- Safely searches for that exact string — no injection!
+DEALLOCATE PREPARE safe_query;
+```
+
+**Application-level prepared statements (recommended):**
+
+```python
+# Python (mysql-connector-python)
+cursor = connection.cursor(prepared=True)
+cursor.execute("SELECT * FROM products WHERE category = %s AND price > %s",
+               ('Electronics', 100))
+results = cursor.fetchall()
+```
+
+```javascript
+// Node.js (mysql2)
+const [rows] = await connection.execute(
+    'SELECT * FROM products WHERE category = ? AND price > ?',
+    ['Electronics', 100]
+);
+```
+
+---
+
+## Topic 37C — Character Sets & Collations
+
+### 🌍 Real-Life Analogy
+
+A **character set** defines which symbols can be stored (English letters only? Chinese characters? Emojis?). A **collation** defines how those symbols are compared and sorted (case-sensitive? accent-sensitive?).
+
+---
+
+### 1️⃣ WHY — Why Character Sets Matter?
+
+- **utf8mb4** supports ALL Unicode characters including emojis (👍, 🎉).
+- MySQL's older `utf8` (alias for `utf8mb3`) only handles characters up to 3 bytes — it **cannot** store emojis or some Asian characters!
+- Wrong character set = garbled text (mojibake), broken searches, or data loss.
+
+---
+
+### 2️⃣ HOW — Managing Character Sets
+
+```sql
+-- Check server defaults
+SHOW VARIABLES LIKE 'character_set_server';   -- utf8mb4 (ideally)
+SHOW VARIABLES LIKE 'collation_server';       -- utf8mb4_0900_ai_ci (ideally)
+
+-- Check database character set
+SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME
+FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = 'shop';
+
+-- Create database with explicit character set
+CREATE DATABASE my_app
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_unicode_ci;
+
+-- Change existing database
+ALTER DATABASE my_app
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_unicode_ci;
+
+-- Create table with specific character set
+CREATE TABLE messages (
+    id      INT AUTO_INCREMENT PRIMARY KEY,
+    content TEXT CHARACTER SET utf8mb4
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Convert existing table
+ALTER TABLE messages CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Check column character set
+SHOW FULL COLUMNS FROM messages;
+```
+
+**Common Collations and Their Behavior:**
+
+| Collation | Case-Sensitive | Accent-Sensitive | Example: 'a' = 'A'? | 'é' = 'e'? |
+|---|---|---|---|---|
+| `utf8mb4_0900_ai_ci` | No (ci) | No (ai) | Yes | Yes |
+| `utf8mb4_0900_as_cs` | Yes (cs) | Yes (as) | No | No |
+| `utf8mb4_unicode_ci` | No (ci) | No | Yes | Yes |
+| `utf8mb4_bin` | Yes (binary) | Yes | No | No |
+| `utf8mb4_general_ci` | No | No | Yes | Yes |
+
+> - `ci` = case-insensitive, `cs` = case-sensitive
+> - `ai` = accent-insensitive, `as` = accent-sensitive
+
+```sql
+-- Collation affects comparisons and sorting:
+SELECT 'café' = 'cafe';  -- 1 (true) with utf8mb4_unicode_ci
+SELECT 'café' = 'cafe';  -- 0 (false) with utf8mb4_bin
+
+-- Force a specific collation in a query
+SELECT * FROM customers
+WHERE name COLLATE utf8mb4_bin = 'Alice';  -- case-sensitive search
+```
+
+> **Best Practice:** Always use `utf8mb4` with `utf8mb4_unicode_ci` or `utf8mb4_0900_ai_ci` (MySQL 8.0 default). Never use the old `utf8` (which is actually `utf8mb3`).
+
+---
+
+## Topic 37D — User Variables, Session Variables & Cursors
+
+### User-Defined Variables (@variables)
+
+```sql
+-- Set a variable
+SET @min_price = 100;
+SET @greeting = 'Hello, World!';
+SET @today = CURDATE();
+
+-- Use in queries
+SELECT * FROM products WHERE price > @min_price;
+
+-- Set from a query result
+SELECT @max_price := MAX(price) FROM products;
+SELECT @max_price;  -- Shows the max price
+
+-- Variables persist for the entire session
+-- Different sessions have independent @variables
+
+-- Variables in UPDATE statements
+SET @row_number = 0;
+SELECT @row_number := @row_number + 1 AS row_num, product_name, price
+FROM products
+ORDER BY price DESC;
+```
+
+### Session and Global Variables
+
+```sql
+-- View a system variable
+SELECT @@max_connections;          -- global
+SELECT @@session.wait_timeout;     -- session
+
+-- Set for current session only
+SET SESSION wait_timeout = 28800;
+SET SESSION group_concat_max_len = 1000000;
+
+-- Set globally (requires SUPER privilege, affects new sessions)
+SET GLOBAL max_connections = 200;
+
+-- Common session variables you might tune:
+SHOW VARIABLES LIKE 'wait_timeout';         -- idle connection timeout
+SHOW VARIABLES LIKE 'max_allowed_packet';   -- max query/data size
+SHOW VARIABLES LIKE 'group_concat_max_len'; -- GROUP_CONCAT limit
+SHOW VARIABLES LIKE 'sql_mode';             -- SQL strictness settings
+```
+
+### Cursors (Row-by-Row Processing in Stored Procedures)
+
+Cursors let you iterate over query results **one row at a time** inside a stored procedure — like a `for` loop.
+
+```sql
+DELIMITER //
+
+CREATE PROCEDURE ApplyBulkDiscount()
+BEGIN
+    -- Declare variables
+    DECLARE v_product_id INT;
+    DECLARE v_price DECIMAL(10,2);
+    DECLARE v_done BOOLEAN DEFAULT FALSE;
+
+    -- Declare cursor
+    DECLARE product_cursor CURSOR FOR
+        SELECT product_id, price FROM products WHERE stock > 100;
+
+    -- Declare handler for end of cursor
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = TRUE;
+
+    -- Open cursor
+    OPEN product_cursor;
+
+    -- Loop through rows
+    read_loop: LOOP
+        FETCH product_cursor INTO v_product_id, v_price;
+        IF v_done THEN
+            LEAVE read_loop;
+        END IF;
+
+        -- Apply 5% discount to high-stock products
+        UPDATE products
+        SET price = v_price * 0.95
+        WHERE product_id = v_product_id;
+    END LOOP;
+
+    -- Close cursor
+    CLOSE product_cursor;
+
+    SELECT 'Bulk discount applied!' AS result;
+END //
+
+DELIMITER ;
+
+CALL ApplyBulkDiscount();
+```
+
+> ⚠️ **Warning:** Cursors are slow (row-by-row). Prefer set-based operations (UPDATE with WHERE) whenever possible. Use cursors only when row-by-row logic is unavoidable.
+
+---
+
+## Topic 37E — Events (Scheduled Tasks)
+
+### 🌍 Real-Life Analogy
+
+MySQL Events are like **cron jobs** built into the database. They run SQL statements on a schedule — hourly, daily, weekly — without needing external scripts.
+
+---
+
+### 1️⃣ WHY — Why Events?
+
+- Automate maintenance: purge old logs, update statistics, archive data.
+- No need for external cron/scheduler.
+- Runs inside MySQL with full SQL power.
+
+---
+
+### 2️⃣ HOW — Creating and Managing Events
+
+```sql
+-- First, ensure the event scheduler is ON
+SET GLOBAL event_scheduler = ON;
+SHOW VARIABLES LIKE 'event_scheduler';
+
+-- One-time event (runs once, then auto-drops)
+CREATE EVENT one_time_cleanup
+ON SCHEDULE AT CURRENT_TIMESTAMP + INTERVAL 1 HOUR
+DO
+    DELETE FROM access_logs WHERE request_time < DATE_SUB(NOW(), INTERVAL 90 DAY);
+
+-- Recurring event (runs every day at midnight)
+CREATE EVENT daily_log_cleanup
+ON SCHEDULE EVERY 1 DAY
+STARTS '2026-02-22 00:00:00'
+DO
+    DELETE FROM access_logs WHERE request_time < DATE_SUB(NOW(), INTERVAL 90 DAY);
+
+-- Recurring event with ENDS
+CREATE EVENT weekly_stats_update
+ON SCHEDULE EVERY 1 WEEK
+STARTS '2026-02-23 02:00:00'
+ENDS '2027-02-23 02:00:00'
+DO
+BEGIN
+    TRUNCATE TABLE weekly_stats;
+    INSERT INTO weekly_stats (category, revenue)
+    SELECT category, SUM(amount) FROM sales
+    WHERE sale_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+    GROUP BY category;
+END;
+
+-- Multi-statement event (requires BEGIN...END and DELIMITER)
+DELIMITER //
+CREATE EVENT monthly_archive
+ON SCHEDULE EVERY 1 MONTH
+DO
+BEGIN
+    -- Move old orders to archive
+    INSERT INTO orders_archive SELECT * FROM orders
+    WHERE order_date < DATE_SUB(CURDATE(), INTERVAL 1 YEAR);
+
+    -- Delete archived orders
+    DELETE FROM orders
+    WHERE order_date < DATE_SUB(CURDATE(), INTERVAL 1 YEAR);
+END //
+DELIMITER ;
+
+-- View all events
+SHOW EVENTS;
+
+-- View event details
+SHOW CREATE EVENT daily_log_cleanup;
+
+-- Disable an event (keep but don't run)
+ALTER EVENT daily_log_cleanup DISABLE;
+
+-- Re-enable
+ALTER EVENT daily_log_cleanup ENABLE;
+
+-- Drop an event
+DROP EVENT IF EXISTS one_time_cleanup;
+```
+
+---
+
+### ✏️ Practice Exercise 37A–37E
+
+> **Difficulty:** ⭐⭐⭐ Advanced
+>
+> 1. Check what storage engine your tables use. Convert a MyISAM table to InnoDB.
+> 2. Create a temporary table with aggregated sales data, then join it with the main products table.
+> 3. Write a prepared statement that searches for products by category and minimum price.
+> 4. Check your database's character set. If it's not utf8mb4, convert it.
+> 5. Write a stored procedure with a cursor that iterates over products and logs each one.
+> 6. Create an event that runs daily to delete logs older than 30 days.
+
+---
+
 ## 🏁 Part 8 Summary
 
 | Topic | Key Takeaway |
@@ -4450,6 +6390,11 @@ SHOW REPLICA STATUS\G
 | **Views** | Named queries that act like virtual tables. Simplify, secure, and abstract. |
 | **JSON** | Native JSON type for semi-structured data. Use ->>, JSON_SET, JSON_EXTRACT. |
 | **Replication** | Primary-replica for read scaling, high availability, and backups. |
+| **Storage Engines** | InnoDB (default, ACID) vs MyISAM (fast reads). Choose based on requirements. |
+| **Temp Tables & Prepared Stmts** | Temporary tables for intermediate results. Prepared statements prevent SQL injection. |
+| **Character Sets** | Use utf8mb4 for full Unicode support. Collations control sort/compare rules. |
+| **Variables & Cursors** | User @vars, session vars, row-by-row cursor processing in stored procedures. |
+| **Events** | Scheduled tasks that run automatically (like cron jobs inside MySQL). |
 
 > **Next up:** [Part 9: Real-World Projects & Comparisons](#part-9-real-world-projects--comparisons)
 
@@ -5312,37 +7257,58 @@ CASE WHEN cond THEN val ELSE other END
 |---|---|
 | **ACID** | Atomicity, Consistency, Isolation, Durability — properties that guarantee reliable transactions |
 | **Aggregate Function** | Function that operates on a set of rows and returns a single value (COUNT, SUM, AVG) |
+| **ALTER TABLE** | DDL command to modify an existing table's structure (add/drop columns, indexes, constraints) |
 | **AUTO_INCREMENT** | Column attribute that automatically generates a unique integer for each new row |
 | **B-Tree** | Balanced tree data structure used by most MySQL indexes for efficient lookups |
 | **Binary Log (binlog)** | Log of all changes made to the database, used for replication and point-in-time recovery |
 | **Cardinality** | The number of distinct values in a column; high cardinality = good index candidate |
+| **CASE Expression** | SQL conditional logic — evaluates conditions and returns values (like if/switch in code) |
+| **Character Set** | Defines which characters can be stored (e.g., utf8mb4 supports all Unicode including emojis) |
+| **COALESCE** | Function that returns the first non-NULL value from a list of arguments |
+| **Collation** | Rules for how characters are compared and sorted (case-sensitive, accent-sensitive, etc.) |
 | **Composite Key** | A primary or unique key consisting of two or more columns |
 | **Constraint** | A rule enforced on data in a table (NOT NULL, UNIQUE, CHECK, FOREIGN KEY) |
 | **Correlated Subquery** | A subquery that references columns from the outer query |
+| **CROSS JOIN** | Returns the Cartesian product of two tables (every row × every row) |
 | **CTE** | Common Table Expression — a named temporary result set defined with `WITH` |
+| **Cursor** | A database object that enables row-by-row processing of query results in stored procedures |
 | **DDL** | Data Definition Language — SQL commands that define database structure (CREATE, ALTER, DROP) |
 | **DML** | Data Manipulation Language — SQL commands that manipulate data (SELECT, INSERT, UPDATE, DELETE) |
 | **DCL** | Data Control Language — SQL commands for access control (GRANT, REVOKE) |
 | **Deadlock** | When two transactions block each other, waiting for resources the other holds |
 | **Denormalization** | Intentionally adding redundancy for read performance (opposite of normalization) |
 | **ER Diagram** | Entity-Relationship Diagram — visual representation of database tables and their relationships |
+| **Event** | A scheduled task in MySQL that runs SQL automatically at specified intervals |
 | **Foreign Key** | A column that references the primary key of another table, enforcing referential integrity |
+| **FULL OUTER JOIN** | Returns all rows from both tables, matched where possible, NULLs where not (emulated in MySQL via UNION) |
 | **Full Table Scan** | Reading every row in a table; slow for large tables. Indicated by `type: ALL` in EXPLAIN |
+| **INNER JOIN** | Returns only rows that have matching values in both joined tables |
 | **InnoDB** | MySQL's default storage engine; supports transactions, foreign keys, and row-level locking |
 | **Isolation Level** | Controls how much of other transactions' uncommitted work a transaction can see |
 | **JOIN** | Combining rows from two or more tables based on a related column |
 | **Junction Table** | A table that implements a many-to-many relationship between two other tables |
+| **LEFT JOIN** | Returns all rows from the left table and matched rows from the right (NULLs for non-matches) |
+| **MyISAM** | Older MySQL storage engine; fast reads but no transactions, foreign keys, or crash recovery |
+| **NATURAL JOIN** | Automatically joins tables on columns with the same name (fragile — avoid in production) |
 | **Normalization** | Process of organizing data to reduce redundancy (1NF, 2NF, 3NF) |
 | **Partition** | Dividing a table into smaller physical segments for performance and management |
 | **Partition Pruning** | MySQL's ability to skip irrelevant partitions during a query |
+| **Prepared Statement** | Pre-compiled SQL with placeholders; prevents SQL injection and improves repeated execution |
 | **Primary Key** | A column (or combo) that uniquely identifies each row; NOT NULL and UNIQUE |
 | **Query Plan** | The strategy MySQL chooses to execute a query (viewable via EXPLAIN) |
+| **Recursive CTE** | A CTE that references itself to traverse hierarchies or generate sequences |
+| **REGEXP** | Regular expression pattern matching in MySQL — more powerful than LIKE |
 | **Replica** | A copy of the primary database that stays in sync; used for read scaling and availability |
+| **RIGHT JOIN** | Returns all rows from the right table and matched rows from the left (NULLs for non-matches) |
 | **Schema** | The structure of a database: its tables, columns, types, constraints, and relationships |
+| **SELF JOIN** | A join where a table is joined with itself using different aliases |
+| **Storage Engine** | The component that handles how data is stored, retrieved, and indexed (InnoDB, MyISAM, MEMORY) |
 | **Stored Procedure** | A saved set of SQL statements that can be called by name with parameters |
 | **Subquery** | A query nested inside another query |
 | **TCL** | Transaction Control Language — SQL commands for transactions (COMMIT, ROLLBACK, SAVEPOINT) |
+| **Temporary Table** | A table that exists only for the current session and is automatically dropped on disconnect |
 | **Trigger** | A stored program that fires automatically in response to INSERT, UPDATE, or DELETE |
+| **utf8mb4** | MySQL's true UTF-8 encoding supporting all Unicode characters including emojis (use instead of utf8) |
 | **View** | A named query stored in the database that acts like a virtual table |
 | **Window Function** | A function that performs a calculation across related rows without collapsing them |
 
