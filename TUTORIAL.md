@@ -384,6 +384,86 @@ Without keys:
 | **Foreign Key (FK)** | A column in one table needs to point to a row in another table. | `dept_id` in `employees` referencing `departments` |
 | **Unique Key** | A column must have unique values but isn't the primary identifier. | `email` in a `users` table |
 | **Composite Key** | A combination of two or more columns together form a unique identifier. | `(student_id, course_id)` in an `enrollments` table |
+| **Candidate Key** | Any column (or combination) that *could* serve as the primary key. Each table may have several. | `email` and `student_id` are both candidate keys in `students` |
+| **Super Key** | Any superset of a candidate key (adds extra columns that aren't strictly needed for uniqueness). | `(student_id, name)` — `student_id` alone is enough, so adding `name` makes it a super key |
+| **Alternate Key** | A candidate key that was **not** chosen as the primary key. | If `student_id` is the PK, then `email` becomes an alternate key |
+| **Surrogate Key** | An artificial, system-generated key with no business meaning (e.g., auto-increment ID). | `id INT AUTO_INCREMENT PRIMARY KEY` |
+| **Natural Key** | A key derived from real-world data that naturally identifies the row. | `isbn` for books, `ssn` for people, `email` for users |
+| **Compound Key** | Another name for composite key — a key made from two or more columns. | `(flight_number, departure_date)` in a `flights` table |
+
+---
+
+### 📐 Key Hierarchy — How All Key Types Relate
+
+Understanding how keys relate to each other avoids confusion:
+
+```
+Super Key  (any set of columns that uniquely identifies a row)
+  └── Candidate Key  (a MINIMAL super key — no extra columns)
+        ├── Primary Key  (the ONE candidate key you choose as the main identifier)
+        └── Alternate Key(s)  (all other candidate keys you did NOT pick)
+
+Composite / Compound Key  =  any key (PK, Candidate, or Unique) that uses 2+ columns
+Foreign Key  =  a column that references another table's PK or Unique key
+Surrogate Key  =  an artificial PK (auto-increment, UUID) with no business meaning
+Natural Key  =  a PK drawn from real-world data (email, ISBN, SSN)
+```
+
+**Concrete example with an `employees` table:**
+
+| Column | Unique? | Key classification |
+|---|---|---|
+| `emp_id` (AUTO_INCREMENT) | ✅ | Super Key → Candidate Key → **Primary Key** (chosen) → Surrogate Key |
+| `email` | ✅ | Super Key → Candidate Key → **Alternate Key** (not chosen as PK) |
+| `ssn` | ✅ | Super Key → Candidate Key → **Alternate Key** → Natural Key |
+| `(emp_id, name)` | ✅ | Super Key (not minimal — `emp_id` alone suffices) |
+| `name` | ❌ | Not a key (duplicates possible) |
+
+---
+
+### 🔑 Surrogate Key vs Natural Key — When to Use Which?
+
+This is one of the most debated decisions in database design:
+
+| Aspect | Surrogate Key | Natural Key |
+|---|---|---|
+| **Definition** | Artificial, system-generated (auto-increment, UUID) | Real-world data (email, ISBN, SSN) |
+| **Stability** | Never changes | May change (user changes email, govt reissues SSN) |
+| **Size** | Small (INT = 4 bytes) | Can be large (VARCHAR(150) for email) |
+| **JOIN performance** | Fast (integer comparison) | Slower (string comparison) |
+| **Readability** | Meaningless number (`42`) | Self-documenting (`978-0-13-468599-1`) |
+| **Foreign key size** | Small in every child table | Large, repeated in every child table |
+| **Universality** | Works for every table | Not every entity has a good natural key |
+
+```sql
+-- ✅ Surrogate key approach (RECOMMENDED for most tables)
+CREATE TABLE products (
+    product_id INT AUTO_INCREMENT PRIMARY KEY,  -- surrogate (no business meaning)
+    sku        VARCHAR(20) NOT NULL UNIQUE,      -- natural key kept as alternate key
+    name       VARCHAR(100) NOT NULL,
+    price      DECIMAL(10,2) NOT NULL
+);
+
+-- ✅ Natural key approach (appropriate for lookup/reference tables)
+CREATE TABLE countries (
+    country_code CHAR(2) PRIMARY KEY,  -- natural key (ISO 3166-1 alpha-2, e.g., 'US', 'IN')
+    country_name VARCHAR(100) NOT NULL
+);
+
+-- ✅ Natural key approach (appropriate for junction tables)
+CREATE TABLE student_courses (
+    student_id INT NOT NULL,
+    course_id  INT NOT NULL,
+    PRIMARY KEY (student_id, course_id),  -- composite natural key
+    FOREIGN KEY (student_id) REFERENCES students(student_id),
+    FOREIGN KEY (course_id)  REFERENCES courses(course_id)
+);
+```
+
+**Rule of thumb:**
+- Use **surrogate keys** for entity tables (users, products, orders) — they're stable and performant.
+- Use **natural keys** for lookup/reference tables (countries, currencies, status codes) — they're self-documenting.
+- Use **composite natural keys** for junction/bridge tables — they enforce uniqueness naturally.
 
 ---
 
@@ -482,6 +562,132 @@ INSERT INTO course_ratings VALUES (1, 1, 3);
 -- ERROR 1062: Duplicate entry '1-1' for key 'PRIMARY'
 ```
 
+**When to use a composite key vs a surrogate key:**
+
+| Scenario | Composite Key | Surrogate Key + UNIQUE |
+|---|---|---|
+| Junction/bridge table (M:N) | ✅ Preferred — naturally enforces uniqueness | Works but adds an unnecessary column |
+| Entity table with natural composite ID | ✅ Good if columns are stable | ✅ Preferred if columns might change |
+| Table that will be referenced as FK | ❌ Awkward — child tables need both columns | ✅ Preferred — single-column FK is simpler |
+
+```sql
+-- Composite key in junction table (RECOMMENDED)
+CREATE TABLE order_items (
+    order_id   INT NOT NULL,
+    product_id INT NOT NULL,
+    quantity   INT NOT NULL DEFAULT 1,
+    unit_price DECIMAL(10,2) NOT NULL,
+    PRIMARY KEY (order_id, product_id),
+    FOREIGN KEY (order_id) REFERENCES orders(order_id),
+    FOREIGN KEY (product_id) REFERENCES products(product_id)
+);
+
+-- vs. Surrogate key + UNIQUE constraint (when junction table is referenced by others)
+CREATE TABLE order_items_v2 (
+    item_id    INT AUTO_INCREMENT PRIMARY KEY,   -- surrogate key for easy FK reference
+    order_id   INT NOT NULL,
+    product_id INT NOT NULL,
+    quantity   INT NOT NULL DEFAULT 1,
+    unit_price DECIMAL(10,2) NOT NULL,
+    UNIQUE (order_id, product_id),               -- still enforces uniqueness
+    FOREIGN KEY (order_id) REFERENCES orders(order_id),
+    FOREIGN KEY (product_id) REFERENCES products(product_id)
+);
+```
+
+#### Example 8A: Candidate Key, Alternate Key, and Super Key
+
+```sql
+CREATE TABLE employees_keys_demo (
+    emp_id   INT AUTO_INCREMENT PRIMARY KEY,  -- Candidate Key #1 → chosen as PRIMARY KEY
+    email    VARCHAR(150) NOT NULL UNIQUE,     -- Candidate Key #2 → ALTERNATE KEY
+    ssn      CHAR(11) NOT NULL UNIQUE,         -- Candidate Key #3 → ALTERNATE KEY
+    emp_name VARCHAR(100) NOT NULL,
+    dept_id  INT
+);
+```
+
+**Analysis of keys in this table:**
+
+| Column(s) | Unique? | Minimal? | Classification |
+|---|---|---|---|
+| `emp_id` | ✅ | ✅ | **Candidate Key → Primary Key** |
+| `email` | ✅ | ✅ | **Candidate Key → Alternate Key** |
+| `ssn` | ✅ | ✅ | **Candidate Key → Alternate Key** |
+| `(emp_id, email)` | ✅ | ❌ (emp_id alone suffices) | **Super Key** (not a candidate key) |
+| `(emp_id, emp_name)` | ✅ | ❌ | **Super Key** (not a candidate key) |
+| `(emp_id, email, ssn, emp_name, dept_id)` | ✅ | ❌ | **Super Key** (all columns — trivially unique) |
+| `emp_name` | ❌ | — | **Not a key** (names can repeat) |
+| `dept_id` | ❌ | — | **Not a key** (many employees per dept) |
+
+> **Key insight:** Every **candidate key** is a **super key**, but not every super key is a candidate key. A candidate key is the **smallest possible** super key — you can't remove any column without losing uniqueness.
+
+#### Example 8B: Natural Key vs Surrogate Key
+
+```sql
+-- NATURAL KEY approach: ISBN naturally identifies a book
+CREATE TABLE books_natural (
+    isbn  CHAR(13) PRIMARY KEY,          -- natural key: globally unique book identifier
+    title VARCHAR(200) NOT NULL,
+    author VARCHAR(100) NOT NULL,
+    price DECIMAL(8,2)
+);
+
+-- SURROGATE KEY approach: system-generated ID, ISBN as alternate key
+CREATE TABLE books_surrogate (
+    book_id INT AUTO_INCREMENT PRIMARY KEY,  -- surrogate key: no business meaning
+    isbn    CHAR(13) NOT NULL UNIQUE,        -- natural key preserved as alternate key
+    title   VARCHAR(200) NOT NULL,
+    author  VARCHAR(100) NOT NULL,
+    price   DECIMAL(8,2)
+);
+
+-- Foreign key comparison: surrogate key is simpler in child tables
+-- With natural key:
+CREATE TABLE book_reviews_natural (
+    review_id INT AUTO_INCREMENT PRIMARY KEY,
+    isbn      CHAR(13) NOT NULL,               -- 13 bytes per FK reference
+    rating    TINYINT CHECK (rating BETWEEN 1 AND 5),
+    comment   TEXT,
+    FOREIGN KEY (isbn) REFERENCES books_natural(isbn)
+);
+
+-- With surrogate key:
+CREATE TABLE book_reviews_surrogate (
+    review_id INT AUTO_INCREMENT PRIMARY KEY,
+    book_id   INT NOT NULL,                    -- 4 bytes per FK reference (more efficient)
+    rating    TINYINT CHECK (rating BETWEEN 1 AND 5),
+    comment   TEXT,
+    FOREIGN KEY (book_id) REFERENCES books_surrogate(book_id)
+);
+```
+
+#### Example 8C: Composite Unique Key (non-primary)
+
+A composite key doesn't have to be the primary key — it can also be a UNIQUE constraint:
+
+```sql
+CREATE TABLE employee_skills (
+    id          INT AUTO_INCREMENT PRIMARY KEY,     -- surrogate PK
+    emp_id      INT NOT NULL,
+    skill_name  VARCHAR(50) NOT NULL,
+    proficiency ENUM('beginner','intermediate','expert') DEFAULT 'beginner',
+    UNIQUE (emp_id, skill_name),                    -- composite UNIQUE: one rating per skill per employee
+    FOREIGN KEY (emp_id) REFERENCES employees_keys_demo(emp_id)
+);
+
+-- Works: same employee, different skills
+INSERT INTO employee_skills (emp_id, skill_name, proficiency) VALUES (1, 'Python', 'expert');
+INSERT INTO employee_skills (emp_id, skill_name, proficiency) VALUES (1, 'SQL', 'intermediate');
+
+-- Works: different employee, same skill
+INSERT INTO employee_skills (emp_id, skill_name, proficiency) VALUES (2, 'Python', 'beginner');
+
+-- FAILS: duplicate combination
+INSERT INTO employee_skills (emp_id, skill_name, proficiency) VALUES (1, 'Python', 'beginner');
+-- ERROR 1062: Duplicate entry '1-Python' for key 'emp_id'
+```
+
 ---
 
 ### Summary of Key Types
@@ -492,6 +698,11 @@ INSERT INTO course_ratings VALUES (1, 1, 3);
 | **Foreign Key** | ✅ Yes (if column is nullable) | ✅ Yes | Many |
 | **Unique Key** | ✅ Yes (one NULL allowed) | ❌ No | Many |
 | **Composite Key** | Depends on column defs | ❌ No (combo must be unique) | 1 (as PK) or many (as unique) |
+| **Candidate Key** | ❌ No (must identify rows) | ❌ No | 1 or more per table |
+| **Super Key** | Depends on column defs | ❌ No | Many (any superset of candidate key) |
+| **Alternate Key** | Same as Unique Key | ❌ No | 0 or more (candidate keys not chosen as PK) |
+| **Surrogate Key** | ❌ No | ❌ No | Typically 1 (auto-increment PK) |
+| **Natural Key** | ❌ No (if used as PK) | ❌ No | Depends on table data |
 
 ---
 
@@ -856,7 +1067,7 @@ SELECT * FROM greetings;
 |---|---|
 | **Databases** | Organized digital storage with integrity, security, and performance — far superior to flat files. |
 | **Relational Databases** | Data stored in tables linked by keys; queried with SQL. |
-| **Keys** | Primary keys uniquely identify rows; foreign keys link tables; unique keys enforce distinctness; composite keys combine columns. |
+| **Keys** | Primary keys uniquely identify rows; foreign keys link tables; unique keys enforce distinctness; composite keys combine columns; candidate/alternate/super keys form the key hierarchy; surrogate vs natural key is a core design choice. |
 | **SQL** | The universal language for relational databases, split into DDL, DML, DCL, and TCL. |
 | **MySQL** | A free, fast, battle-tested relational database ideal for web applications. |
 
@@ -2713,6 +2924,218 @@ CREATE TABLE employees_3nf (
 
 ---
 
+### 4️⃣ Beyond 3NF — BCNF, 4NF, and 5NF
+
+While 3NF is sufficient for most applications, understanding higher normal forms helps with complex schemas.
+
+#### ✅ BCNF — Boyce-Codd Normal Form
+
+**Rule:** Must be in 3NF + every **determinant** must be a candidate key.
+
+> A **determinant** is any column (or set of columns) that uniquely determines another column. BCNF says: if column A determines column B, then A *must* be a candidate key.
+
+**When does 3NF fail but BCNF helps?** When a non-candidate-key column determines part of a composite candidate key.
+
+```sql
+-- EXAMPLE: A university where each subject is taught by one teacher,
+-- but each teacher teaches only one subject.
+-- Students can take multiple subjects.
+
+-- ❌ This table is in 3NF but violates BCNF:
+CREATE TABLE student_subjects_bad (
+    student_id   INT NOT NULL,
+    subject      VARCHAR(50) NOT NULL,
+    teacher      VARCHAR(100) NOT NULL,
+    PRIMARY KEY (student_id, subject)
+);
+
+-- Problem: teacher → subject (each teacher teaches one subject)
+-- But `teacher` is NOT a candidate key of this table.
+-- This can lead to update anomalies:
+-- If we update teacher 'Dr. Smith' to teach 'Physics' instead of 'Math',
+-- we must update EVERY row where teacher = 'Dr. Smith'.
+
+INSERT INTO student_subjects_bad VALUES (1, 'Math', 'Dr. Smith');
+INSERT INTO student_subjects_bad VALUES (2, 'Math', 'Dr. Smith');
+INSERT INTO student_subjects_bad VALUES (3, 'Physics', 'Dr. Jones');
+-- Dr. Smith appears twice — redundancy!
+
+-- ✅ BCNF Fix: decompose into two tables
+CREATE TABLE teachers_subjects (
+    teacher VARCHAR(100) PRIMARY KEY,
+    subject VARCHAR(50) NOT NULL UNIQUE
+);
+
+CREATE TABLE student_teachers (
+    student_id INT NOT NULL,
+    teacher    VARCHAR(100) NOT NULL,
+    PRIMARY KEY (student_id, teacher),
+    FOREIGN KEY (teacher) REFERENCES teachers_subjects(teacher)
+);
+
+-- Now teacher → subject is in its own table where teacher IS the primary key
+INSERT INTO teachers_subjects VALUES ('Dr. Smith', 'Math'), ('Dr. Jones', 'Physics');
+INSERT INTO student_teachers VALUES (1, 'Dr. Smith'), (2, 'Dr. Smith'), (3, 'Dr. Jones');
+```
+
+#### ✅ 4NF — Fourth Normal Form
+
+**Rule:** Must be in BCNF + no **multi-valued dependencies**.
+
+> A **multi-valued dependency** occurs when one column independently determines multiple values of two other columns.
+
+```sql
+-- ❌ Violates 4NF: an employee can have multiple skills AND multiple languages
+-- but skills and languages are INDEPENDENT of each other.
+CREATE TABLE emp_skills_languages_bad (
+    emp_id   INT NOT NULL,
+    skill    VARCHAR(50) NOT NULL,
+    language VARCHAR(50) NOT NULL,
+    PRIMARY KEY (emp_id, skill, language)
+);
+
+-- Problem: If emp 1 has 3 skills and 2 languages, we need 3×2 = 6 rows!
+INSERT INTO emp_skills_languages_bad VALUES
+(1, 'Python', 'English'),
+(1, 'Python', 'Spanish'),
+(1, 'SQL', 'English'),
+(1, 'SQL', 'Spanish'),
+(1, 'Java', 'English'),
+(1, 'Java', 'Spanish');  -- 6 rows for just 3 skills + 2 languages = massive redundancy!
+
+-- ✅ 4NF Fix: decompose into two independent tables
+CREATE TABLE emp_skills (
+    emp_id INT NOT NULL,
+    skill  VARCHAR(50) NOT NULL,
+    PRIMARY KEY (emp_id, skill)
+);
+
+CREATE TABLE emp_languages (
+    emp_id   INT NOT NULL,
+    language VARCHAR(50) NOT NULL,
+    PRIMARY KEY (emp_id, language)
+);
+
+-- Now: 3 rows in emp_skills + 2 rows in emp_languages = 5 rows total (not 6!)
+INSERT INTO emp_skills VALUES (1, 'Python'), (1, 'SQL'), (1, 'Java');
+INSERT INTO emp_languages VALUES (1, 'English'), (1, 'Spanish');
+```
+
+#### ✅ 5NF — Fifth Normal Form (Join Dependency)
+
+**Rule:** Must be in 4NF + the table cannot be decomposed into smaller tables without losing data (no **join dependencies**).
+
+5NF is rarely needed in practice. It addresses edge cases where a table can be split into three or more tables, and the original can only be reconstructed by joining ALL of them (not just any two).
+
+```sql
+-- Example: A supplier can supply parts, a supplier can supply to projects,
+-- and projects can need parts. But the combination (supplier, part, project)
+-- has a special meaning: "this supplier supplies this part to this project."
+
+-- If the three pairwise relationships (supplier-part, supplier-project, part-project)
+-- can be inferred from joins, the table is NOT in 5NF.
+-- If the three-way relationship carries additional meaning, it IS in 5NF.
+
+-- In practice, most databases achieve 5NF naturally when designed to 3NF/BCNF.
+```
+
+#### Normalization Levels — Complete Summary
+
+| Form | Rule | Eliminates | Practical Use |
+|---|---|---|---|
+| **1NF** | Atomic values, unique rows | Repeating groups, multi-valued cells | Always required |
+| **2NF** | No partial dependencies on PK | Redundancy in composite-PK tables | Always recommended |
+| **3NF** | No transitive dependencies | Non-key → non-key dependencies | Standard for OLTP |
+| **BCNF** | Every determinant is a candidate key | Anomalies from non-key determinants | ✅ Aim for this in practice |
+| **4NF** | No multi-valued dependencies | Cartesian product explosion | When independent multi-valued facts exist |
+| **5NF** | No join dependencies | Subtle data loss on decomposition | Rarely needed explicitly |
+
+---
+
+### 5️⃣ Denormalization — When and Why to Break the Rules
+
+Normalization eliminates redundancy, but **denormalization** intentionally reintroduces it for performance. This is a *conscious trade-off*, not a mistake.
+
+#### When to Denormalize
+
+| Situation | Why Denormalize | Example |
+|---|---|---|
+| **Read-heavy analytics (OLAP)** | Avoid expensive JOINs on every query | Pre-joined "fact" tables in a data warehouse |
+| **Frequently computed aggregates** | Avoid re-calculating SUM/COUNT every time | Store `order_count` directly in `customers` table |
+| **Caching frequently accessed data** | Reduce JOIN complexity for hot paths | Store `category_name` directly in `products` |
+| **Reporting dashboards** | Pre-aggregate data for instant display | Materialized summary tables |
+
+#### Denormalization Techniques
+
+```sql
+-- TECHNIQUE 1: Redundant column (store derived/copied data)
+-- Normalized: must JOIN orders + order_items to get total
+-- Denormalized: store total directly in orders
+
+ALTER TABLE orders ADD COLUMN total_amount DECIMAL(12,2) DEFAULT 0;
+
+-- Keep it in sync with a trigger
+DELIMITER //
+CREATE TRIGGER trg_update_order_total
+AFTER INSERT ON order_items
+FOR EACH ROW
+BEGIN
+    UPDATE orders
+    SET total_amount = (
+        SELECT SUM(quantity * unit_price) FROM order_items WHERE order_id = NEW.order_id
+    )
+    WHERE order_id = NEW.order_id;
+END //
+DELIMITER ;
+
+-- TECHNIQUE 2: Summary table (pre-aggregated data)
+CREATE TABLE daily_sales_summary (
+    summary_date DATE PRIMARY KEY,
+    total_orders INT NOT NULL DEFAULT 0,
+    total_revenue DECIMAL(12,2) NOT NULL DEFAULT 0,
+    avg_order_value DECIMAL(10,2) NOT NULL DEFAULT 0
+);
+
+-- Populate with a scheduled event or trigger
+INSERT INTO daily_sales_summary (summary_date, total_orders, total_revenue, avg_order_value)
+SELECT
+    order_date,
+    COUNT(*),
+    SUM(total_amount),
+    AVG(total_amount)
+FROM orders
+WHERE order_date = CURDATE() - INTERVAL 1 DAY
+GROUP BY order_date
+ON DUPLICATE KEY UPDATE
+    total_orders = VALUES(total_orders),
+    total_revenue = VALUES(total_revenue),
+    avg_order_value = VALUES(avg_order_value);
+
+-- TECHNIQUE 3: Materialized view pattern (MySQL doesn't have true materialized views)
+CREATE TABLE product_stats_cache (
+    product_id INT PRIMARY KEY,
+    product_name VARCHAR(100),
+    category_name VARCHAR(50),         -- denormalized from categories table
+    avg_rating DECIMAL(3,2),           -- pre-computed from reviews
+    review_count INT,                  -- pre-computed from reviews
+    last_refreshed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(product_id)
+);
+```
+
+#### Normalization vs Denormalization Decision Matrix
+
+| Factor | Normalize | Denormalize |
+|---|---|---|
+| **Write-heavy workload** | ✅ Less data to update | ❌ Must update multiple copies |
+| **Read-heavy workload** | ❌ Many JOINs slow reads | ✅ Pre-joined data is fast |
+| **Data integrity critical** | ✅ Single source of truth | ❌ Risk of inconsistent copies |
+| **Storage is limited** | ✅ No redundant data | ❌ Uses more space |
+| **Schema changes frequent** | ✅ Easier to modify | ❌ Redundant columns to update |
+| **Complex reporting** | ❌ Complex JOINs | ✅ Simpler, faster queries |
+
+---
+
 ### ✏️ Practice Exercise 15
 
 > **Difficulty:** ⭐⭐ Intermediate
@@ -2866,6 +3289,133 @@ CREATE TABLE user_profiles (
 
 The `UNIQUE` constraint on `user_id` in `user_profiles` ensures each user has **at most one** profile.
 
+#### Example 32A: Self-Referencing Foreign Key
+
+A table can reference **itself** — this is essential for hierarchical data like organizational charts, category trees, or threaded comments.
+
+```sql
+-- Employees table where each employee has a manager (who is also an employee)
+CREATE TABLE employees_hierarchy (
+    emp_id      INT AUTO_INCREMENT PRIMARY KEY,
+    emp_name    VARCHAR(100) NOT NULL,
+    manager_id  INT,                              -- references emp_id in the SAME table
+    FOREIGN KEY (manager_id) REFERENCES employees_hierarchy(emp_id)
+        ON DELETE SET NULL                         -- if manager is deleted, set to NULL
+);
+
+-- Insert data (CEO has no manager → NULL)
+INSERT INTO employees_hierarchy (emp_name, manager_id) VALUES
+    ('Alice (CEO)', NULL),           -- emp_id = 1, no manager
+    ('Bob (VP)', 1),                 -- emp_id = 2, reports to Alice
+    ('Charlie (VP)', 1),             -- emp_id = 3, reports to Alice
+    ('Diana (Manager)', 2),          -- emp_id = 4, reports to Bob
+    ('Eve (Developer)', 4),          -- emp_id = 5, reports to Diana
+    ('Frank (Developer)', 4);        -- emp_id = 6, reports to Diana
+
+-- Query: find all direct reports of Bob
+SELECT e.emp_name AS employee, m.emp_name AS manager
+FROM employees_hierarchy e
+LEFT JOIN employees_hierarchy m ON e.manager_id = m.emp_id
+WHERE m.emp_name = 'Bob (VP)';
+
+-- Query: find the entire reporting chain using a recursive CTE
+WITH RECURSIVE org_chart AS (
+    -- Base case: start from CEO (no manager)
+    SELECT emp_id, emp_name, manager_id, 0 AS level
+    FROM employees_hierarchy
+    WHERE manager_id IS NULL
+
+    UNION ALL
+
+    -- Recursive case: find all employees reporting to someone in the chain
+    SELECT e.emp_id, e.emp_name, e.manager_id, oc.level + 1
+    FROM employees_hierarchy e
+    INNER JOIN org_chart oc ON e.manager_id = oc.emp_id
+)
+SELECT CONCAT(REPEAT('  ', level), emp_name) AS org_tree, level
+FROM org_chart
+ORDER BY level, emp_name;
+```
+
+**Expected output:**
+
+```
+org_tree                 | level
+-------------------------|------
+Alice (CEO)              | 0
+  Bob (VP)               | 1
+  Charlie (VP)           | 1
+    Diana (Manager)      | 2
+      Eve (Developer)    | 3
+      Frank (Developer)  | 3
+```
+
+**Other use cases for self-referencing FKs:**
+
+| Use Case | Table | Self-FK Column |
+|---|---|---|
+| Organizational hierarchy | `employees` | `manager_id → emp_id` |
+| Category tree | `categories` | `parent_id → category_id` |
+| Threaded comments | `comments` | `reply_to_id → comment_id` |
+| File system folders | `folders` | `parent_folder_id → folder_id` |
+| Bill of materials | `parts` | `assembly_id → part_id` |
+
+#### Example 32B: Identifying vs Non-Identifying Relationships
+
+This distinction affects how you design foreign keys and is important in ER modeling:
+
+**Identifying Relationship:** The child **cannot exist** without the parent, and the parent's PK is part of the child's PK.
+
+```sql
+-- IDENTIFYING: An order_item cannot exist without an order.
+-- The order_id is PART OF the primary key of order_items.
+CREATE TABLE orders_ident (
+    order_id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    order_date DATE
+);
+
+CREATE TABLE order_items_ident (
+    order_id   INT NOT NULL,
+    line_number INT NOT NULL,                     -- 1, 2, 3... within each order
+    product_id INT NOT NULL,
+    quantity   INT NOT NULL,
+    PRIMARY KEY (order_id, line_number),           -- order_id is PART of the PK → identifying
+    FOREIGN KEY (order_id) REFERENCES orders_ident(order_id) ON DELETE CASCADE
+);
+-- If the order is deleted, items make no sense → CASCADE is appropriate.
+```
+
+**Non-Identifying Relationship:** The child can logically exist independently; the parent's PK is just a regular FK column (not part of the child's PK).
+
+```sql
+-- NON-IDENTIFYING: An employee belongs to a department,
+-- but the employee can exist without a department (nullable FK).
+CREATE TABLE departments_nonident (
+    dept_id   INT AUTO_INCREMENT PRIMARY KEY,
+    dept_name VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE employees_nonident (
+    emp_id  INT AUTO_INCREMENT PRIMARY KEY,       -- own PK, independent of dept
+    name    VARCHAR(100) NOT NULL,
+    dept_id INT,                                  -- regular FK, NOT part of PK → non-identifying
+    FOREIGN KEY (dept_id) REFERENCES departments_nonident(dept_id) ON DELETE SET NULL
+);
+-- If department is deleted, employee still exists (dept_id set to NULL).
+```
+
+**Summary:**
+
+| Aspect | Identifying Relationship | Non-Identifying Relationship |
+|---|---|---|
+| FK in child's PK? | ✅ Yes (part of composite PK) | ❌ No (separate column) |
+| Child depends on parent? | ✅ Strongly (can't exist alone) | ❌ Weakly (can exist without parent) |
+| FK nullable? | ❌ Never | ✅ Can be nullable |
+| ON DELETE? | Usually CASCADE | Usually SET NULL or RESTRICT |
+| ER diagram line style | **Solid line** | **Dashed line** |
+| Example | Order → Order Items | Department → Employees |
+
 #### Cascade Actions Reference
 
 | Action | On DELETE | On UPDATE |
@@ -2900,6 +3450,13 @@ Constraints are like **rules posted on a form**: "This field is required," "Ente
 
 Constraints enforce **data integrity** at the database level. Even if your application has bugs, the database will reject bad data.
 
+| Integrity Type | What It Protects | Enforced By |
+|---|---|---|
+| **Entity integrity** | Every row is uniquely identifiable | PRIMARY KEY, NOT NULL |
+| **Referential integrity** | Relationships between tables are valid | FOREIGN KEY |
+| **Domain integrity** | Values fall within allowed ranges/types | CHECK, ENUM, data types |
+| **User-defined integrity** | Custom business rules | CHECK, UNIQUE, triggers |
+
 ---
 
 ### 2️⃣ WHEN — Which Constraint to Use
@@ -2913,6 +3470,149 @@ Constraints enforce **data integrity** at the database level. Even if your appli
 | `DEFAULT` | Automatic value if none provided | status defaults to 'active' |
 | `CHECK` | Custom validation rule | age >= 18, price >= 0 |
 | `AUTO_INCREMENT` | Auto-generate sequential integers | IDs |
+
+---
+
+### 2️⃣A Column-Level vs Table-Level Constraints
+
+Constraints can be defined in two places. Understanding the difference is important for readability and for composite constraints.
+
+#### Column-Level Constraints (inline, on a single column)
+
+```sql
+CREATE TABLE users_column_level (
+    user_id   INT AUTO_INCREMENT PRIMARY KEY,         -- PK: column-level
+    username  VARCHAR(50) NOT NULL UNIQUE,             -- NOT NULL + UNIQUE: column-level
+    email     VARCHAR(150) NOT NULL,                   -- NOT NULL: column-level
+    age       INT CHECK (age >= 13),                   -- CHECK: column-level
+    status    VARCHAR(20) DEFAULT 'active'             -- DEFAULT: column-level
+);
+```
+
+**Characteristics:**
+- Defined immediately after the column's data type.
+- Can only reference the **single column** they're on.
+- Cannot span multiple columns.
+- Automatically named by MySQL (e.g., `users_column_level_chk_1`).
+
+#### Table-Level Constraints (at the end, can span multiple columns)
+
+```sql
+CREATE TABLE users_table_level (
+    user_id   INT AUTO_INCREMENT,
+    username  VARCHAR(50) NOT NULL,
+    email     VARCHAR(150) NOT NULL,
+    age       INT,
+    status    VARCHAR(20) DEFAULT 'active',
+
+    -- Table-level constraints (defined AFTER all columns)
+    PRIMARY KEY (user_id),                             -- PK: table-level
+    UNIQUE (username),                                 -- UNIQUE: table-level
+    UNIQUE (email),                                    -- UNIQUE: table-level
+    CHECK (age >= 13)                                  -- CHECK: table-level
+);
+```
+
+**Characteristics:**
+- Defined after all column definitions, separated by commas.
+- **Can span multiple columns** (composite constraints).
+- Required for: composite PRIMARY KEY, composite UNIQUE, composite FOREIGN KEY.
+- Can be explicitly named (see below).
+
+#### When You MUST Use Table-Level
+
+```sql
+-- Composite PRIMARY KEY — MUST be table-level
+CREATE TABLE enrollment (
+    student_id INT NOT NULL,
+    course_id  INT NOT NULL,
+    PRIMARY KEY (student_id, course_id)  -- cannot be done inline on one column
+);
+
+-- Composite UNIQUE — MUST be table-level
+CREATE TABLE schedules (
+    room_id    INT NOT NULL,
+    time_slot  TIME NOT NULL,
+    day_of_week ENUM('Mon','Tue','Wed','Thu','Fri') NOT NULL,
+    UNIQUE (room_id, time_slot, day_of_week)  -- no double-booking
+);
+
+-- Multi-column CHECK — MUST be table-level
+CREATE TABLE events (
+    event_id   INT AUTO_INCREMENT PRIMARY KEY,
+    start_date DATE NOT NULL,
+    end_date   DATE NOT NULL,
+    CHECK (end_date >= start_date)  -- references TWO columns → must be table-level
+);
+
+-- FOREIGN KEY — MUST be table-level (MySQL doesn't support inline FK syntax)
+CREATE TABLE orders_tbl (
+    order_id    INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+);
+```
+
+---
+
+### 2️⃣B Named Constraints
+
+Naming your constraints makes error messages readable and makes it easy to drop/modify specific constraints later.
+
+```sql
+-- ❌ WITHOUT names: MySQL auto-generates cryptic names
+CREATE TABLE products_unnamed (
+    product_id INT AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(100) NOT NULL,
+    price      DECIMAL(10,2) CHECK (price >= 0),     -- auto-named: products_unnamed_chk_1
+    sku        VARCHAR(20) UNIQUE                     -- auto-named: sku
+);
+
+-- ✅ WITH names: clear, descriptive, easy to manage
+CREATE TABLE products_named (
+    product_id INT AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(100) NOT NULL,
+    price      DECIMAL(10,2),
+    sku        VARCHAR(20),
+    stock      INT DEFAULT 0,
+
+    -- Named constraints
+    CONSTRAINT uq_product_sku     UNIQUE (sku),
+    CONSTRAINT chk_price_positive CHECK (price >= 0),
+    CONSTRAINT chk_stock_positive CHECK (stock >= 0)
+);
+
+-- Benefits of named constraints:
+
+-- 1. Clear error messages:
+INSERT INTO products_named (name, price, sku) VALUES ('Test', -5, 'SKU001');
+-- ERROR 3819: Check constraint 'chk_price_positive' is violated
+-- (vs the cryptic 'products_named_chk_1' without naming)
+
+-- 2. Easy to drop specific constraints:
+ALTER TABLE products_named DROP CONSTRAINT chk_stock_positive;
+
+-- 3. Easy to identify in INFORMATION_SCHEMA:
+SELECT CONSTRAINT_NAME, CONSTRAINT_TYPE
+FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+WHERE TABLE_NAME = 'products_named';
+-- Output:
+-- | CONSTRAINT_NAME    | CONSTRAINT_TYPE |
+-- |--------------------|-----------------|
+-- | PRIMARY            | PRIMARY KEY     |
+-- | uq_product_sku     | UNIQUE          |
+-- | chk_price_positive | CHECK           |
+```
+
+**Naming conventions for constraints:**
+
+| Constraint Type | Convention | Example |
+|---|---|---|
+| Primary Key | `pk_tablename` | `pk_employees` |
+| Foreign Key | `fk_child_parent` | `fk_orders_customers` |
+| Unique Key | `uq_tablename_column` | `uq_users_email` |
+| Check | `chk_tablename_rule` | `chk_employees_age` |
+| Index | `idx_tablename_column` | `idx_products_price` |
 
 ---
 
@@ -3026,6 +3726,311 @@ Symbols:
   1:1 = One-to-One    1:N = One-to-Many    M:N = Many-to-Many
 ```
 
+---
+
+### 3️⃣A Cardinality Notations — Different ER Diagram Styles
+
+There are several popular notation styles. Knowing all of them helps you read diagrams from different tools and textbooks.
+
+#### Chen Notation (Original Academic Style)
+
+```
+┌──────────┐          ◇──────────◇          ┌──────────┐
+│ STUDENT  │────────── ENROLLS IN ──────────│  COURSE  │
+└──────────┘                                └──────────┘
+     │                                           │
+  (student_id)                              (course_id)
+  (name)                                    (course_name)
+
+Symbols:
+  ┌──────┐  = Entity (rectangle)
+  ◇──────◇ = Relationship (diamond)
+  ○        = Attribute (oval/circle, connected to entity)
+  ───      = Line connecting entity to relationship
+  1, N, M  = Cardinality labels on lines
+```
+
+#### Crow's Foot Notation (Most Common in Industry Tools)
+
+```
+                 ┌───────────┐               ┌───────────┐
+                 │ customers │               │  orders   │
+                 ├───────────┤               ├───────────┤
+                 │ PK id     │───────┤├──────│ FK cust_id│
+                 │    name   │   1       N   │ PK id     │
+                 │    email  │               │    date   │
+                 └───────────┘               └───────────┘
+
+Crow's Foot Symbols:
+  ──┤├──  One and only one (mandatory one)
+  ──┤○──  Zero or one (optional one)
+  ──<├──  One or many (mandatory many)  
+  ──<○──  Zero or many (optional many)
+
+Common readings:
+  ──┤├────<├──  "One customer has one or many orders"
+  ──┤├────<○──  "One customer has zero or many orders"
+  ──┤○────┤├──  "An order has zero or one coupon"
+```
+
+#### UML Notation (Used in Software Engineering)
+
+```
+┌──────────────┐  1     0..*  ┌──────────────┐
+│  Customer    │──────────────│    Order     │
+├──────────────┤              ├──────────────┤
+│ -id: int     │              │ -id: int     │
+│ -name: string│              │ -date: date  │
+│ -email: string│             │ -total: decimal│
+└──────────────┘              └──────────────┘
+
+UML Cardinality:
+  1      = Exactly one
+  0..1   = Zero or one
+  0..*   = Zero or many
+  1..*   = One or many
+  *      = Many (shorthand for 0..*)
+  m..n   = Between m and n
+```
+
+#### Notation Comparison
+
+| Concept | Chen | Crow's Foot | UML |
+|---|---|---|---|
+| Entity | Rectangle | Rectangle | Rectangle (with attributes) |
+| Relationship | Diamond | Line with symbols | Line with numbers |
+| Exactly one | `1` label | `──┤├──` | `1` |
+| Zero or one | `0..1` label | `──┤○──` | `0..1` |
+| One or many | `1..N` label | `──<├──` | `1..*` |
+| Zero or many | `0..N` label | `──<○──` | `0..*` |
+| Attribute | Oval | Listed inside box | Listed inside box |
+| Primary key | Underlined in oval | `PK` prefix | Stereotype or bold |
+
+---
+
+### 3️⃣B Participation Constraints (Total vs Partial)
+
+Participation defines whether **every** entity must participate in a relationship or only **some**.
+
+#### Total Participation (Mandatory)
+
+Every row in the entity MUST have a corresponding relationship. Shown as a **double line** in Chen notation or a `├` (bar) in Crow's Foot.
+
+```sql
+-- TOTAL participation: Every order MUST have a customer.
+-- An order without a customer is meaningless.
+CREATE TABLE orders_total (
+    order_id    INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,              -- NOT NULL → total participation
+    order_date  DATE NOT NULL,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+);
+-- The NOT NULL on customer_id enforces total participation:
+-- you CANNOT insert an order without a valid customer.
+```
+
+#### Partial Participation (Optional)
+
+An entity **may or may not** participate. Shown as a **single line** in Chen notation or a `○` (circle) in Crow's Foot.
+
+```sql
+-- PARTIAL participation: An employee MAY belong to a department, or might not.
+CREATE TABLE employees_partial (
+    emp_id  INT AUTO_INCREMENT PRIMARY KEY,
+    name    VARCHAR(100) NOT NULL,
+    dept_id INT,                           -- NULLABLE → partial participation
+    FOREIGN KEY (dept_id) REFERENCES departments(dept_id)
+);
+-- dept_id can be NULL: a new hire might not be assigned a department yet.
+```
+
+**Summary:**
+
+| Participation | FK Column | Meaning | ER Notation |
+|---|---|---|---|
+| **Total** (mandatory) | `NOT NULL` | Every entity MUST participate | Double line (Chen), `├` bar (Crow's) |
+| **Partial** (optional) | `NULLABLE` | Entity MAY participate | Single line (Chen), `○` circle (Crow's) |
+
+---
+
+### 3️⃣C Weak Entities
+
+A **weak entity** cannot be uniquely identified by its own attributes alone — it depends on a **strong (owner) entity** for its identity.
+
+```
+Strong Entity                    Weak Entity
+┌──────────────┐                ╔═══════════════╗
+│   Building   │═══ CONTAINS ══╣   Room        ║
+├──────────────┤                ╠═══════════════╣
+│ PK building_id│               ║ PK building_id║ ← borrowed from Building
+│    name      │                ║ PK room_number║ ← partial key
+│    address   │                ║    capacity   ║
+└──────────────┘                ╚═══════════════╝
+
+Notation: Weak entities have DOUBLE borders.
+          The identifying relationship has a DOUBLE diamond.
+```
+
+```sql
+-- STRONG ENTITY: Building (identified by its own PK)
+CREATE TABLE buildings (
+    building_id INT AUTO_INCREMENT PRIMARY KEY,
+    name        VARCHAR(100) NOT NULL,
+    address     VARCHAR(200)
+);
+
+-- WEAK ENTITY: Room (identified by building_id + room_number together)
+-- Room 101 in Building A is different from Room 101 in Building B.
+-- Room cannot exist without a building.
+CREATE TABLE rooms (
+    building_id INT NOT NULL,
+    room_number VARCHAR(10) NOT NULL,       -- partial key (not unique alone!)
+    capacity    INT,
+    room_type   ENUM('classroom', 'lab', 'office', 'conference'),
+    PRIMARY KEY (building_id, room_number), -- composite PK includes owner's PK
+    FOREIGN KEY (building_id) REFERENCES buildings(building_id)
+        ON DELETE CASCADE                   -- if building is demolished, rooms go too
+);
+
+-- Room 101 can exist in multiple buildings:
+INSERT INTO buildings VALUES (1, 'Main Hall', '100 University Ave');
+INSERT INTO buildings VALUES (2, 'Science Wing', '200 University Ave');
+INSERT INTO rooms VALUES (1, '101', 30, 'classroom');  -- Room 101 in Main Hall
+INSERT INTO rooms VALUES (2, '101', 25, 'lab');          -- Room 101 in Science Wing (different room!)
+INSERT INTO rooms VALUES (1, '102', 50, 'lecture');      -- Room 102 in Main Hall
+```
+
+**More examples of weak entities:**
+
+| Strong Entity | Weak Entity | Partial Key | Why Weak? |
+|---|---|---|---|
+| `buildings` | `rooms` | `room_number` | Room 101 exists in many buildings |
+| `orders` | `order_items` | `line_number` | Line 1 exists in many orders |
+| `invoices` | `invoice_lines` | `line_id` | Line items have no meaning without invoice |
+| `exams` | `exam_questions` | `question_number` | Q1 exists in every exam |
+| `bank_accounts` | `transactions` | `txn_sequence` | Transaction #1 exists per account |
+
+**Key characteristics of weak entities:**
+1. **No independent PK** — their PK includes the owner's PK (composite).
+2. **Existence dependent** — deleting the owner should delete them (CASCADE).
+3. **Partial key** — they have a **discriminator** that's only unique within the context of the owner.
+
+---
+
+### 3️⃣D Attribute Types in ER Modeling
+
+ER diagrams classify attributes into several types. Understanding these helps translate real-world concepts into proper table designs.
+
+#### 1. Simple (Atomic) Attributes
+
+Cannot be divided further. Maps directly to a single column.
+
+```sql
+-- Simple attributes: age, price, email
+CREATE TABLE products_attr (
+    product_id INT AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(100) NOT NULL,    -- simple attribute
+    price      DECIMAL(10,2) NOT NULL,   -- simple attribute
+    weight     DECIMAL(8,2)              -- simple attribute
+);
+```
+
+#### 2. Composite Attributes
+
+Can be divided into smaller sub-attributes. In a database, you split them into separate columns.
+
+```sql
+-- ❌ Composite attribute stored as one column (BAD)
+CREATE TABLE contacts_bad (
+    id   INT PRIMARY KEY,
+    full_address VARCHAR(500)   -- "123 Main St, Apt 4, New York, NY, 10001"
+);
+
+-- ✅ Composite attribute decomposed into sub-attributes (GOOD)
+CREATE TABLE contacts_good (
+    id       INT PRIMARY KEY,
+    street   VARCHAR(200),        -- sub-attribute
+    apt_unit VARCHAR(20),         -- sub-attribute
+    city     VARCHAR(100),        -- sub-attribute
+    state    CHAR(2),             -- sub-attribute
+    zip      VARCHAR(10)          -- sub-attribute
+);
+-- Now you can search/filter by city, state, or zip individually!
+```
+
+#### 3. Derived Attributes
+
+Calculated from other attributes. Usually NOT stored — computed on the fly or via generated columns.
+
+```sql
+CREATE TABLE employees_derived (
+    emp_id     INT AUTO_INCREMENT PRIMARY KEY,
+    first_name VARCHAR(50) NOT NULL,
+    last_name  VARCHAR(50) NOT NULL,
+    birth_date DATE NOT NULL,
+
+    -- Derived attribute: full_name (computed from first + last)
+    full_name  VARCHAR(101) GENERATED ALWAYS AS (CONCAT(first_name, ' ', last_name)) STORED,
+
+    -- Derived attribute: age (computed from birth_date)
+    -- Note: VIRTUAL means not physically stored, calculated on read
+    age        INT GENERATED ALWAYS AS (TIMESTAMPDIFF(YEAR, birth_date, CURDATE())) VIRTUAL
+);
+
+INSERT INTO employees_derived (first_name, last_name, birth_date)
+VALUES ('Alice', 'Johnson', '1990-05-15');
+
+SELECT emp_id, full_name, age FROM employees_derived;
+-- Output: 1, Alice Johnson, 35  (age auto-calculated)
+```
+
+#### 4. Multi-Valued Attributes
+
+An entity can have multiple values for this attribute (e.g., a person has multiple phone numbers). In relational databases, these become a **separate table**.
+
+```sql
+-- ❌ Multi-valued attribute in one column (BAD — violates 1NF)
+CREATE TABLE contacts_multivalue_bad (
+    contact_id INT PRIMARY KEY,
+    name       VARCHAR(100),
+    phone_numbers VARCHAR(500)    -- "555-0100, 555-0200, 555-0300"
+);
+
+-- ✅ Multi-valued attribute as a separate table (GOOD)
+CREATE TABLE contacts_mv (
+    contact_id INT AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE contact_phones (
+    phone_id   INT AUTO_INCREMENT PRIMARY KEY,
+    contact_id INT NOT NULL,
+    phone_type ENUM('home', 'work', 'mobile') NOT NULL,
+    phone_number VARCHAR(20) NOT NULL,
+    FOREIGN KEY (contact_id) REFERENCES contacts_mv(contact_id) ON DELETE CASCADE,
+    UNIQUE (contact_id, phone_type)   -- one number per type per contact
+);
+
+INSERT INTO contacts_mv VALUES (1, 'Alice');
+INSERT INTO contact_phones VALUES (NULL, 1, 'home', '555-0100');
+INSERT INTO contact_phones VALUES (NULL, 1, 'work', '555-0200');
+INSERT INTO contact_phones VALUES (NULL, 1, 'mobile', '555-0300');
+```
+
+#### 5. Key Attributes
+
+Attributes that uniquely identify an entity. These become PRIMARY KEY or UNIQUE columns. (Already covered in Topic 3.)
+
+#### Attribute Types Summary
+
+| Attribute Type | ER Symbol | Database Implementation | Example |
+|---|---|---|---|
+| **Simple** | Oval | Single column | `price DECIMAL(10,2)` |
+| **Composite** | Oval with sub-ovals | Multiple columns | `street`, `city`, `state`, `zip` |
+| **Derived** | Dashed oval | Generated column or computed in query | `age = YEAR(NOW()) - YEAR(birth_date)` |
+| **Multi-valued** | Double oval | Separate table with FK | `contact_phones` table |
+| **Key** | Underlined oval | PRIMARY KEY or UNIQUE | `emp_id INT PRIMARY KEY` |
+
 #### Example 36: E-Commerce ER Diagram
 
 ```
@@ -3118,10 +4123,10 @@ CREATE TABLE order_items (
 
 | Topic | Key Takeaway |
 |---|---|
-| **Normalization** | Split data into focused tables to avoid anomalies. 1NF → 2NF → 3NF. |
-| **Foreign Keys** | Link tables and enforce referential integrity. Use CASCADE for automatic cleanup. |
-| **Constraints** | NOT NULL, UNIQUE, CHECK, DEFAULT — enforce data rules at the DB level. |
-| **ER Diagrams** | Visual blueprints for database design. Plan before you code. |
+| **Normalization** | Split data into focused tables to avoid anomalies. 1NF → 2NF → 3NF → BCNF. Higher forms (4NF, 5NF) handle multi-valued and join dependencies. Denormalize consciously for read performance. |
+| **Foreign Keys** | Link tables and enforce referential integrity. Use CASCADE for cleanup. Self-referencing FKs model hierarchies. Identifying vs non-identifying relationships affect PK design. |
+| **Constraints** | NOT NULL, UNIQUE, CHECK, DEFAULT — enforce data rules at the DB level. Column-level for simple, table-level for composite. Always name your constraints. |
+| **ER Diagrams** | Visual blueprints for database design. Know Crow's Foot, Chen, and UML notations. Understand participation (total/partial), weak entities, and attribute types (simple, composite, derived, multi-valued). |
 
 > **Next up:** [Part 5: Querying Data](#part-5-querying-data) — JOINs, aggregations, subqueries, and window functions.
 
@@ -6381,25 +7386,6 @@ DROP EVENT IF EXISTS one_time_cleanup;
 
 ---
 
-## 🏁 Part 8 Summary
-
-| Topic | Key Takeaway |
-|---|---|
-| **Stored Procedures** | Reusable, parameterized SQL programs. DELIMITER, IN/OUT, IF/ELSE, SIGNAL. |
-| **Triggers** | Automatic actions on INSERT/UPDATE/DELETE. Great for auditing and validation. |
-| **Views** | Named queries that act like virtual tables. Simplify, secure, and abstract. |
-| **JSON** | Native JSON type for semi-structured data. Use ->>, JSON_SET, JSON_EXTRACT. |
-| **Replication** | Primary-replica for read scaling, high availability, and backups. |
-| **Storage Engines** | InnoDB (default, ACID) vs MyISAM (fast reads). Choose based on requirements. |
-| **Temp Tables & Prepared Stmts** | Temporary tables for intermediate results. Prepared statements prevent SQL injection. |
-| **Character Sets** | Use utf8mb4 for full Unicode support. Collations control sort/compare rules. |
-| **Variables & Cursors** | User @vars, session vars, row-by-row cursor processing in stored procedures. |
-| **Events** | Scheduled tasks that run automatically (like cron jobs inside MySQL). |
-
-> **Next up:** [Part 9: Real-World Projects & Comparisons](#part-9-real-world-projects--comparisons)
-
----
-
 # Part 9: Real-World Projects & Comparisons
 
 > **Goal:** Apply everything you've learned to complete projects. Avoid common mistakes. Understand how MySQL compares to other databases.
@@ -7258,14 +8244,17 @@ CASE WHEN cond THEN val ELSE other END
 | **ACID** | Atomicity, Consistency, Isolation, Durability — properties that guarantee reliable transactions |
 | **Aggregate Function** | Function that operates on a set of rows and returns a single value (COUNT, SUM, AVG) |
 | **ALTER TABLE** | DDL command to modify an existing table's structure (add/drop columns, indexes, constraints) |
+| **Alternate Key** | A candidate key that was NOT chosen as the primary key; enforced via UNIQUE constraint |
 | **AUTO_INCREMENT** | Column attribute that automatically generates a unique integer for each new row |
 | **B-Tree** | Balanced tree data structure used by most MySQL indexes for efficient lookups |
+| **BCNF** | Boyce-Codd Normal Form — every determinant must be a candidate key; stricter than 3NF |
 | **Binary Log (binlog)** | Log of all changes made to the database, used for replication and point-in-time recovery |
 | **Cardinality** | The number of distinct values in a column; high cardinality = good index candidate |
 | **CASE Expression** | SQL conditional logic — evaluates conditions and returns values (like if/switch in code) |
 | **Character Set** | Defines which characters can be stored (e.g., utf8mb4 supports all Unicode including emojis) |
 | **COALESCE** | Function that returns the first non-NULL value from a list of arguments |
 | **Collation** | Rules for how characters are compared and sorted (case-sensitive, accent-sensitive, etc.) |
+| **Candidate Key** | A minimal set of columns that can uniquely identify every row (a table may have several) |
 | **Composite Key** | A primary or unique key consisting of two or more columns |
 | **Constraint** | A rule enforced on data in a table (NOT NULL, UNIQUE, CHECK, FOREIGN KEY) |
 | **Correlated Subquery** | A subquery that references columns from the outer query |
@@ -7277,27 +8266,35 @@ CASE WHEN cond THEN val ELSE other END
 | **DCL** | Data Control Language — SQL commands for access control (GRANT, REVOKE) |
 | **Deadlock** | When two transactions block each other, waiting for resources the other holds |
 | **Denormalization** | Intentionally adding redundancy for read performance (opposite of normalization) |
+| **Derived Attribute** | An attribute computed from other attributes (e.g., age from birth_date); use generated columns in MySQL |
 | **ER Diagram** | Entity-Relationship Diagram — visual representation of database tables and their relationships |
+| **Entity Integrity** | Every row must be uniquely identifiable — enforced by PRIMARY KEY and NOT NULL |
 | **Event** | A scheduled task in MySQL that runs SQL automatically at specified intervals |
 | **Foreign Key** | A column that references the primary key of another table, enforcing referential integrity |
+| **4NF (Fourth Normal Form)** | BCNF + no multi-valued dependencies — eliminates Cartesian product redundancy |
+| **5NF (Fifth Normal Form)** | 4NF + no join dependencies — rarely needed in practice |
 | **FULL OUTER JOIN** | Returns all rows from both tables, matched where possible, NULLs where not (emulated in MySQL via UNION) |
 | **Full Table Scan** | Reading every row in a table; slow for large tables. Indicated by `type: ALL` in EXPLAIN |
 | **INNER JOIN** | Returns only rows that have matching values in both joined tables |
 | **InnoDB** | MySQL's default storage engine; supports transactions, foreign keys, and row-level locking |
+| **Identifying Relationship** | A relationship where the parent's PK is part of the child's composite PK (child depends on parent) |
 | **Isolation Level** | Controls how much of other transactions' uncommitted work a transaction can see |
 | **JOIN** | Combining rows from two or more tables based on a related column |
 | **Junction Table** | A table that implements a many-to-many relationship between two other tables |
 | **LEFT JOIN** | Returns all rows from the left table and matched rows from the right (NULLs for non-matches) |
 | **MyISAM** | Older MySQL storage engine; fast reads but no transactions, foreign keys, or crash recovery |
 | **NATURAL JOIN** | Automatically joins tables on columns with the same name (fragile — avoid in production) |
-| **Normalization** | Process of organizing data to reduce redundancy (1NF, 2NF, 3NF) |
+| **Natural Key** | A primary key derived from real-world data (ISBN, email, SSN) — stable and self-documenting |
+| **Normalization** | Process of organizing data to reduce redundancy (1NF → 2NF → 3NF → BCNF → 4NF → 5NF) |
 | **Partition** | Dividing a table into smaller physical segments for performance and management |
 | **Partition Pruning** | MySQL's ability to skip irrelevant partitions during a query |
+| **Participation Constraint** | Whether an entity must (total) or may (partial) participate in a relationship |
 | **Prepared Statement** | Pre-compiled SQL with placeholders; prevents SQL injection and improves repeated execution |
 | **Primary Key** | A column (or combo) that uniquely identifies each row; NOT NULL and UNIQUE |
 | **Query Plan** | The strategy MySQL chooses to execute a query (viewable via EXPLAIN) |
 | **Recursive CTE** | A CTE that references itself to traverse hierarchies or generate sequences |
 | **REGEXP** | Regular expression pattern matching in MySQL — more powerful than LIKE |
+| **Referential Integrity** | Ensures foreign key values always point to existing rows in the parent table |
 | **Replica** | A copy of the primary database that stays in sync; used for read scaling and availability |
 | **RIGHT JOIN** | Returns all rows from the right table and matched rows from the left (NULLs for non-matches) |
 | **Schema** | The structure of a database: its tables, columns, types, constraints, and relationships |
@@ -7305,11 +8302,14 @@ CASE WHEN cond THEN val ELSE other END
 | **Storage Engine** | The component that handles how data is stored, retrieved, and indexed (InnoDB, MyISAM, MEMORY) |
 | **Stored Procedure** | A saved set of SQL statements that can be called by name with parameters |
 | **Subquery** | A query nested inside another query |
+| **Super Key** | Any set of columns that uniquely identifies rows; a superset of a candidate key |
+| **Surrogate Key** | An artificial system-generated key (AUTO_INCREMENT, UUID) with no business meaning |
 | **TCL** | Transaction Control Language — SQL commands for transactions (COMMIT, ROLLBACK, SAVEPOINT) |
 | **Temporary Table** | A table that exists only for the current session and is automatically dropped on disconnect |
 | **Trigger** | A stored program that fires automatically in response to INSERT, UPDATE, or DELETE |
 | **utf8mb4** | MySQL's true UTF-8 encoding supporting all Unicode characters including emojis (use instead of utf8) |
 | **View** | A named query stored in the database that acts like a virtual table |
+| **Weak Entity** | An entity that cannot be uniquely identified without its owner entity's PK (uses composite PK) |
 | **Window Function** | A function that performs a calculation across related rows without collapsing them |
 
 ---
